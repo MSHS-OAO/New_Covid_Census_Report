@@ -6,12 +6,13 @@ rm(list=ls())
 
 # Install packages
 #install.packages("tidyverse")
-
+#install.packages("reshape2")
 
 
 # Import Libraries
 library(tidyverse)
 library(readxl)
+library(reshape2)
 
 
 # Set working directory
@@ -26,11 +27,9 @@ repo_file <- rownames(repo)[which.max(repo$mtime)]
 repo <- read_excel(repo_file)
 
 
-
 # Import the most recent census data
 census = file.info(list.files(path= Census_path, full.names=TRUE, pattern="ADT_Bed_Census_Daily_By_Dept_Summary.rpt_"))
 census = census[with(census, order(as.POSIXct(mtime), decreasing = TRUE)), ]
-
 
 
 if (max(repo$CensusDate)==Sys.Date()-1){
@@ -54,7 +53,6 @@ covid = file.info(list.files(path= Census_path, full.names=TRUE, pattern="COVID 
 covid = covid[with(covid, order(as.POSIXct(mtime), decreasing = TRUE)), ]
 
 
-
 if (max(repo$CensusDate)==Sys.Date()-1){
   files = rownames(covid)[1]
   todays_covid_data <-  read_xlsx(files)
@@ -71,7 +69,114 @@ if (max(repo$CensusDate)==Sys.Date()-1){
 rm(covid, todays_covid_raw)
 
 
+# Import reference file -----------
+site_mapping <- read_excel("AnalysisReference 2021-07-20.xlsx", sheet = "SiteMapping",
+                           col_names = TRUE, na = c("", "NA"))
+                           
+unit_mapping <- read_excel("AnalysisReference 2021-07-20.xlsx", sheet = "EpicPremierUnitMapping",
+                           col_names = TRUE,  na = c("", "NA"))
+                          
+
+### Clean Census data 
+todays_census_data <- todays_census_data %>% mutate(CensusYear= substr(YEAR_MONTH, 1, 4),
+                                                    CensusMonth = substr(YEAR_MONTH, 5,6 ))
+ 
+
+todays_census_data <- todays_census_data %>% 
+  mutate(CensusDate= as.Date(paste0(CensusMonth, "/", DAY_OF_MONTH,"/", CensusYear), format = "%m/%d/%Y"))
 
 
 
+colnames(todays_census_data)[colnames(todays_census_data) == "%"] <- "Utilization"
 
+# Map site and Premier unit
+todays_census_data <- left_join(todays_census_data, site_mapping,
+                                by = c("LOC_NAME" = "LOC_NAME"))
+
+# Check data to see if there is data from an extra date
+table(todays_census_data$CensusDate)
+census_date <- unique(todays_census_data$CensusDate)
+
+todays_census_data <- todays_census_data %>%  filter(CensusDate == census_date)
+ 
+# Subset census data
+todays_census_subset <- todays_census_data %>% select("Site", "LOC_NAME", "DEPARTMENT_NAME", "CensusDate", 
+                                                      "OCCUPIED_COUNT",  "TOTAL_BED_CENSUS", "Utilization")
+
+### Clean up COVID data 
+todays_covid_data <- todays_covid_data %>% rename(ICU = GROUP)
+
+# Remove unnecessary columns
+todays_covid_data <- subset(todays_covid_data, select = c(1:9 ))
+todays_covid_data <- subset(todays_covid_data, select = -c(6) )
+
+# Format COVID data census date
+todays_covid_data <- todays_covid_data %>% mutate(CensusDate = as.Date(`REPORT RUN`,  format = "%m/%d/%Y"))
+                                       
+
+# Map site and Premier unit
+todays_covid_data <- left_join(todays_covid_data, site_mapping,  by = c("LOC_NAME" = "LOC_NAME"))
+rm(site_mapping)
+
+
+# Check data to see if there is data from an extra date
+todays_covid_data <- todays_covid_data %>%  filter(CensusDate == census_date)
+
+# Remove any duplicates lines from COVID data
+todays_covid_data <- unique(todays_covid_data)
+
+# Convert infection status to factor so it can be ordered properly
+todays_covid_data <- todays_covid_data %>% mutate(INFECTION_STATUS = factor(INFECTION_STATUS,
+                                      levels = c("COVID-19", "SUSC COVID", "PUI - COVID", "PUM"),  ordered = TRUE))
+
+
+# Remove duplicate MRNs with both a COVID and PUI flag (keep COVID flag)
+todays_covid_data <- todays_covid_data %>% group_by(MRN, INFECTION_STATUS) %>% 
+                                mutate(DuplMRNInfect=n()) %>%    ungroup()
+
+todays_covid_data <- todays_covid_data %>%  filter(DuplMRNInfect == 1)
+
+
+
+# Summarize patient level COVID data
+todays_covid_summary <- todays_covid_data %>%
+  group_by(Site, LOC_NAME, DEPARTMENT_NAME, ICU, CensusDate, INFECTION_STATUS) %>%
+  summarize(TotalPatients = n()) %>%   ungroup()
+
+
+# reshape data
+todays_covid_cast <- dcast(todays_covid_summary,
+                           Site + LOC_NAME + DEPARTMENT_NAME + ICU + CensusDate ~
+                             INFECTION_STATUS, 
+                           value.var = "TotalPatients")
+
+# rename columns
+colnames(todays_covid_cast)[colnames(todays_covid_cast) == "COVID-19"] <- "COVID19"
+colnames(todays_covid_cast)[colnames(todays_covid_cast) == "PUI - COVID"] <- "PUI"
+colnames(todays_covid_cast)[colnames(todays_covid_cast) == "PUM - RESP"] <- "PUM"
+colnames(todays_covid_cast)[colnames(todays_covid_cast) == "SUSC COVID"] <- "SUSC"
+
+
+# Merge COVID data with daily census
+todays_census_covid_merge <- full_join(todays_census_subset, todays_covid_cast, 
+                                       by = c("Site" = "Site",
+                                              "LOC_NAME" = "LOC_NAME",
+                                              "DEPARTMENT_NAME" = "DEPARTMENT_NAME",
+                                              "CensusDate" = "CensusDate"))
+# Remove LOC_NAME column now that dataframes have been merged
+todays_census_covid_merge$LOC_NAME <- NULL
+
+
+# replace NAs with 0
+todays_census_covid_merge[is.na(todays_census_covid_merge$COVID19), "COVID19"] <- 0
+todays_census_covid_merge[is.na(todays_census_covid_merge$PUI), "PUI"] <- 0
+todays_census_covid_merge[is.na(todays_census_covid_merge$PUM), "PUM"] <- 0
+todays_census_covid_merge[is.na(todays_census_covid_merge$SUSC), "SUSC"] <- 0 
+
+
+
+todays_census_covid_merge <- todays_census_covid_merge %>% 
+                           mutate(COVIDUtilization=round((COVID19+PUI+PUM)/TOTAL_BED_CENSUS, 3))
+
+
+                              
