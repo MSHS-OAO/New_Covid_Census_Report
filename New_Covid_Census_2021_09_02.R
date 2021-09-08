@@ -95,10 +95,10 @@ todays_census_data <- left_join(todays_census_data, site_mapping,
 
 # Check data to see if there is data from an extra date
 table(todays_census_data$CensusDate)
-census_date <- unique(todays_census_data$CensusDate)
 
-todays_census_data <- todays_census_data %>%  filter(CensusDate == census_date)
+todays_census_data <- todays_census_data %>%  filter(CensusDate != Sys.Date())
  
+
 # Subset census data
 todays_census_subset <- todays_census_data %>% select("Site", "LOC_NAME", "DEPARTMENT_NAME", "CensusDate", 
                                                       "OCCUPIED_COUNT",  "TOTAL_BED_CENSUS", "Utilization")
@@ -120,7 +120,8 @@ rm(site_mapping)
 
 
 # Check data to see if there is data from an extra date
-todays_covid_data <- todays_covid_data %>%  filter(CensusDate == census_date)
+table(todays_covid_data$CensusDate)
+todays_covid_data <- todays_covid_data %>%  filter(CensusDate != Sys.Date())
 
 # Remove any duplicates lines from COVID data
 todays_covid_data <- unique(todays_covid_data)
@@ -131,12 +132,10 @@ todays_covid_data <- todays_covid_data %>% mutate(INFECTION_STATUS = factor(INFE
 
 
 # Remove duplicate MRNs with both a COVID and PUI flag (keep COVID flag)
-todays_covid_data <- todays_covid_data %>% group_by(MRN, INFECTION_STATUS) %>% 
-                                mutate(DuplMRNInfect=n()) %>%    ungroup()
+todays_covid_data <- todays_covid_data %>% group_by(MRN, CensusDate) %>%  mutate(DuplInfect=n())
+todays_covid_data <- todays_covid_data[!(todays_covid_data$DuplInfect==2 &  todays_covid_data$INFECTION_STATUS=="PUI - COVID"),]
 
-todays_covid_data <- todays_covid_data %>%  filter(DuplMRNInfect == 1)
-
-
+todays_covid_data$DuplInfect <- NULL
 
 # Summarize patient level COVID data
 todays_covid_summary <- todays_covid_data %>%
@@ -173,10 +172,23 @@ todays_census_covid_merge[is.na(todays_census_covid_merge$PUI), "PUI"] <- 0
 todays_census_covid_merge[is.na(todays_census_covid_merge$PUM), "PUM"] <- 0
 todays_census_covid_merge[is.na(todays_census_covid_merge$SUSC), "SUSC"] <- 0 
 
-
-
+# Estimate Covid Utilization 
 todays_census_covid_merge <- todays_census_covid_merge %>% 
                            mutate(COVIDUtilization=round((COVID19+PUI+PUM)/TOTAL_BED_CENSUS, 3))
+
+
+# Map units to Premier name, Unit Type, Include, etc.
+unit_mapping$LOC_NAME <- NULL
+todays_census_covid_merge <- left_join(todays_census_covid_merge,
+                                       unit_mapping[],
+                                       by = c("DEPARTMENT_NAME" =
+                                                "DEPARTMENT_NAME"))
+
+todays_census_covid_merge$PremierMapping <-
+  ifelse(str_detect(todays_census_covid_merge$PremierUnit,
+                    "NO PREMIER MAPPING"), FALSE, TRUE)
+
+
 
 
                               
