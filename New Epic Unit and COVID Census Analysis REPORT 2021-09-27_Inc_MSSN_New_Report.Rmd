@@ -1,0 +1,967 @@
+---
+title: "MSHS Census and Utilization Analysis"
+author: "Health System Operations"
+output: html_document
+---
+
+```{r Install and load packages, echo = FALSE, warning = FALSE, message = FALSE}
+# Code for analyzing and summarizing unit level census and COVID-19 census data ----------------------
+
+#Install and load necessary packages --------------------
+#install.packages("readraw_dfl")
+#install.packages("writeraw_dfl")
+#install.packages("ggplot2")
+#install.packages("lubridate")
+#install.packages("dplyr")
+#install.packages("reshape2")
+#install.packages("svDialogs")
+#install.packages("stringr")
+#install.packages("formattable")
+# install.packages("ggpubr")
+
+#Analysis for weekend discharge tracking
+library(readxl)
+library(writexl)
+library(ggplot2)
+library(lubridate)
+library(dplyr)
+library(reshape2)
+library(svDialogs)
+library(stringr)
+library(formattable)
+library(scales)
+library(ggpubr)
+library(reshape2)
+library(knitr)
+library(kableExtra)
+library(gridExtra)
+library(grid)
+library(ggplot2)
+library(lattice)
+```
+
+
+```{r Determine date ranges in repo, echo = FALSE, warning = FALSE, message = FALSE}
+repo_start_date <- format(min(raw_data$CensusDate), "%m-%d-%Y")
+repo_end_date <- format(max(raw_data$CensusDate), "%m-%d-%Y")
+
+report_run_date <- Sys.time()
+```
+
+*Report Run Date: `r report_run_date`*<br/>
+*Data Date Range: `r repo_start_date` to `r repo_end_date`*<br/>
+*Data Sources:* <br/>
+*- Epic midnight census from prior day (ADT_Bed_Census_Daily_By_Dept_Summary.rpt)*<br/>
+*- Epic infection flag report from prior day (COVID Census Prior Day.rpt).*<br/>
+*- MSSN bed census report from MSSN Tableau Dashboard (Patient Details).*<br/>
+
+```{r data split (COVID Census vs. Unit Capacity), echo = FALSE, warning = FALSE, message = FALSE}
+
+covid_data <- raw_data
+
+capacity_data <- raw_data %>% filter(`Unit Type` != "ED") 
+```
+  
+### {.tabset}
+#### MSHS
+```{r MSHS Bed Capacity Overview, fig.width = 10, echo = FALSE, warning = FALSE, message = FALSE}
+
+capacity_data_mshs <- capacity_data %>%
+  filter(CensusDate == max(CensusDate)) %>%
+  select(Site, `COVID19`, SUSC, PUI, PUM, `non-COVID19`, `Open Beds`)
+
+capacity_data_mshs[is.na(capacity_data_mshs)] <- 0
+
+```
+
+
+```{r MSHS prior day census breakdown, echo = FALSE, warning = FALSE, message = FALSE, fig.width = 10, fig.height=6, fig.align = "center"}
+
+covid_status <- covid_data %>%
+  filter(CensusDate == max(CensusDate)) %>%
+  select(Site, `COVID19`, SUSC, PUI)
+
+
+
+max_sum <- covid_status %>%
+  mutate(sum = `COVID19` + SUSC + PUI) %>%
+  group_by(Site) %>%
+  summarise(sum(sum))
+
+covid_status <- melt(covid_status, id.vars = c("Site"))
+
+covid_status <- covid_status %>%
+  group_by(Site, variable) %>%
+  summarise(total = sum(value))
+
+
+covid_loc <- covid_data %>%
+  filter(CensusDate == max(CensusDate)) %>%
+  select(Site, `COVID19`, SUSC, PUI, `Unit Type High`)
+
+
+covid_loc <- melt(covid_loc, id.vars = c("Site","Unit Type High"))
+
+covid_loc <- covid_loc %>%
+  group_by(Site, `Unit Type High`) %>%
+  summarise(total = sum(value))
+
+covid_loc$`Unit Type High`[which(is.na(covid_loc$`Unit Type High`))] <- "Other"
+
+
+#Hoispitalized covid19 patients by infection status 
+status_graph <-
+  ggplot(covid_status, 
+       aes(x=Site, y=total, fill=factor(variable,levels=c("PUI","SUSC","COVID19"))))+
+  geom_bar(position="stack",stat="identity", width=0.7)+
+  scale_fill_manual(values=c("#7f7f7f","#E69F00","#212070"))+
+  ggtitle(label="\nHospitalized COVID-19 Census (ED and IP) \nby Infection Status")+
+  labs(x=NULL, y="Beds Occupied")+
+  guides(fill=guide_legend(title="Status"))+
+  theme_bw()+
+  theme(plot.title = element_text(size = 16, hjust = 0.5), legend.position = "top", legend.box = "vertical",
+        legend.title = element_text(size = 10), legend.text = element_text(size = 10),
+        axis.text.x = element_text(size = 10, angle = 0, hjust = 0.5),
+        axis.text.y = element_text(size = 10),
+        panel.grid.major = element_line(color = "lightgrey"),
+        panel.grid.minor = element_line(color = "lightgrey"))+
+  scale_y_continuous(limits = c(0, max(max_sum$`sum(sum)`)*1.2))+
+  geom_text(aes(label=total), color="white", 
+            size=3, position = position_stack(vjust = 0.5))+
+  stat_summary(fun.y = sum, vjust = -1, aes(label=ifelse(..y.. == 0,"",..y..), group = Site), 
+               geom="text", color="black", 
+               size=3)
+
+loc_graph <-
+  ggplot(covid_loc, 
+       aes(x=Site, y=total, fill=factor(`Unit Type High`,levels=c("ED","IP","Other"))))+
+  geom_bar(position="stack",stat="identity", width=0.7)+
+  scale_fill_manual(values=c("#00aeef","#d80b8c","#863198"))+
+  ggtitle(label="\nHospitalized COVID-19 Census \nby ED vs. IP")+
+  labs(x=NULL, y="Beds Occupied")+
+  guides(fill=guide_legend(title="Unit Type"))+
+  theme_bw()+
+  theme(plot.title = element_text(size = 16, hjust = 0.5), legend.position = "top", legend.box = "vertical",
+        legend.title = element_text(size = 10), legend.text = element_text(size = 10),
+        axis.text.x = element_text(size = 10, angle = 0, hjust = 0.5),
+        axis.text.y = element_text(size = 10),
+        panel.grid.major = element_line(color = "lightgrey"),
+        panel.grid.minor = element_line(color = "lightgrey"))+
+  scale_y_continuous(limits = c(0, max(max_sum$`sum(sum)`)*1.2))+
+  geom_text(aes(label=total), color="white", 
+            size=3, position = position_stack(vjust = 0.5))+
+  stat_summary(fun.y = sum, vjust = -1, aes(label=ifelse(..y.. == 0,"",..y..), group = Site), 
+               geom="text", color="black", 
+               size=3)
+
+grid.arrange(status_graph, loc_graph, ncol=2,
+             top=textGrob(paste0("\nBased on census at 11:59 PM ",max(covid_data$CensusDate)),
+                      gp=gpar(fontsize=16,font=4)))
+ asis_output("<h5><i> *Only includes Adult Med Surg, ICU, and ED. </i></h5>")
+asis_output("<h5><i> **COVID census data not available for 7/11/2021. </i></h5>")
+
+```
+<style>
+  .superbigimage{
+      overflow-x:scroll;
+      white-space: nowrap;
+  }
+
+  .superbigimage img{
+     max-width: none;
+  }
+
+
+</style>
+
+
+<div class="superbigimage">
+```{r MSHS COVID-19 Patient Census, fig.width = 150, echo = FALSE, warning = FALSE, message = FALSE}
+#Confirmed COVID-19, PUI, PUM patients by day graph
+covid_pts_trend <- covid_data %>%
+  filter(CensusDate < Sys.Date()) %>%
+  select(CensusDate,`COVID19`, SUSC, PUI, PUM) %>%
+  mutate(CensusDate = as.Date(CensusDate))
+
+
+
+covid_pts_trend <- melt(covid_pts_trend, id.vars = c("CensusDate"))
+covid_pts_trend$CensusDate <- as.Date(covid_pts_trend$CensusDate, format="%Y-%m-%d")
+covid_pts_trend <- aggregate(covid_pts_trend$value, 
+                           by=list(covid_pts_trend$CensusDate,covid_pts_trend$variable), FUN=sum)
+colnames(covid_pts_trend) <- c("Date","Patient Type","value")
+
+covid_census_max <- covid_pts_trend %>%
+  group_by(Date) %>%
+  summarise(sum = sum(value))
+
+#Hoispitalized covid19 patients by status 
+ggplot(covid_pts_trend, 
+       aes(x=Date, y=value, fill=factor(`Patient Type`,levels=c("PUM","PUI","SUSC","COVID19"))))+
+  geom_bar(position="stack",stat="identity", width=0.5)+
+  scale_fill_manual(values=c("#d80b8c",	"#00aeef","#E69F00","#212070"))+
+  ggtitle(label="\nMSHS Hospitalized Census by Infection Status (ED and IP)")+
+  labs(x=NULL, y="Beds Occupied")+
+  guides(fill=guide_legend(title="Patient Type"))+
+  theme_bw()+
+  theme(plot.title = element_text(size = 16, vjust = 2), 
+        legend.position='top', 
+        legend.justification='left',
+        legend.direction='horizontal',
+        legend.title = element_text(size = 10), legend.text = element_text(size = 10), 
+        axis.text.x = element_text(size = 10, angle = 45, hjust = 1),
+        axis.text.y = element_text(size = 10),
+        panel.grid.major = element_line(color = "lightgrey"),
+        panel.grid.minor = element_line(color = "lightgrey"))+
+  scale_y_continuous(limits = c(0, max(covid_census_max$sum)*1.2))+
+  scale_x_date(breaks = "day", date_labels = "%m-%d", date_breaks = "2 days", date_minor_breaks = "1 day", expand = c(0, 0.6))+
+  geom_text(aes(label=value), color="white", 
+            size=2, position = position_stack(vjust = 0.5))+
+  stat_summary(fun.y = sum, vjust = -1, aes(label=ifelse(..y.. == 0,"",..y..), group = Date), 
+               geom="text", color="black", 
+               size=3)
+asis_output("<h5><i> *Only includes Adult Med Surg, ICU, and ED. </i></h5>")
+asis_output("<h5><i> **Inaccurate census data on 5/17/2020 and 1/19/2021 due to an Epic Upgrade and outage, respectively. </i></h5>")
+asis_output("<h5><i> ***MSBI data starts from its EPIC go-live date on 8/9/2020. </i></h5>")
+asis_output("<h5><i> ****COVID census data not available for 7/11/2021. </i></h5>")
+
+
+```
+</div>
+
+
+<div class="superbigimage">
+
+```{r MSHS COVID-19 Patient Census 2, fig.width = 150, echo = FALSE, warning = FALSE, message = FALSE}
+
+#Hospitalized covid19 patients census by unit type
+covid_pts_census <- covid_data %>%
+  filter(CensusDate < Sys.Date()) %>%
+  select(CensusDate,`COVID19`, SUSC, PUI, PUM, `Unit Type High`) %>%
+  mutate(total = COVID19 + SUSC + PUI + PUM) %>%
+  group_by(CensusDate, `Unit Type High`) %>%
+  summarise(total = sum(total))
+covid_pts_census$CensusDate <- as.Date(covid_pts_census$CensusDate, format="%Y-%m-%d")
+
+
+covid_pts_census <- covid_pts_census %>%
+  group_by(CensusDate, `Unit Type High`) %>%
+  summarise(total = sum(total))
+
+covid_pts_census$`Unit Type High`[which(is.na(covid_pts_census$`Unit Type High`))] <- "Other"
+
+ggplot(covid_pts_census, 
+       aes(x=CensusDate, y=total, fill=factor(`Unit Type High`,levels=c("ED","IP","Other"))))+
+  geom_bar(position="stack",stat="identity", width=0.6)+
+  scale_fill_manual(values=c("#d80b8c",	"#00aeef", "#863198"))+
+  ggtitle(label="\nMSHS Hospitalized COVID-19 Patients Census by ED vs. IP")+
+  labs(x=NULL, y="Beds Occupied")+
+  guides(fill=guide_legend(title="Unit Type"))+
+  theme_bw()+
+   theme(plot.title = element_text(size = 16, vjust = 2), 
+        legend.position='top', 
+        legend.justification='left',
+        legend.direction='horizontal',
+        legend.title = element_text(size = 10), legend.text = element_text(size = 10), 
+        axis.text.x = element_text(size = 10, angle = 45, hjust = 1),
+        axis.text.y = element_text(size = 10),
+        panel.grid.major = element_line(color = "lightgrey"),
+        panel.grid.minor = element_line(color = "lightgrey"))+
+  scale_y_continuous(limits = c(0, max(covid_census_max$sum)*1.2))+
+  scale_x_date(breaks = "day", date_labels = "%m-%d", date_breaks = "2 days", date_minor_breaks = "1 day", expand = c(0, 0.6))+
+  geom_text(aes(label=total), color="white", 
+            size=2, position = position_stack(vjust = 0.5))+
+  stat_summary(fun.y = sum, vjust = -1, aes(label=ifelse(..y.. == 0,"",..y..), group = CensusDate), 
+               geom="text", color="black", 
+               size=3)
+
+asis_output("<h5><i> *Only includes Adult Med Surg, ICU, and ED. </i></h5>")
+asis_output("<h5><i> **Inaccurate census data on 5/17/2020 and 1/19/2021 due to an Epic Upgrade and outage, respectively. </i></h5>")
+asis_output("<h5><i> ***MSBI data starts from its EPIC go-live date on 8/9/2020. </i></h5>")
+asis_output("<h5><i> ****COVID census data not available for 7/11/2021. </i></h5>")
+
+
+```
+</div>
+
+<div class="superbigimage">
+```{r MSHS COVID-19 Patient Census 3, fig.width = 120, echo = FALSE, warning = FALSE, message = FALSE}
+
+#Hospitalized covid19 patients census trend by unit type
+ggplot(data = covid_pts_census) +
+  geom_point(aes(x = CensusDate, y = total, shape = `Unit Type High`, color = `Unit Type High`)) +
+  geom_line(aes(x = CensusDate, y = total, color = `Unit Type High`)) +
+  scale_shape_manual(values = 1:4)+
+  scale_color_manual(values=c("#d80b8c",	"#00aeef", "#863198"))+
+  labs(title = "\nMSHS Hospitalized COVID-19 Patients Census Trend", 
+       x = NULL, y = "Census", shape = "Unit Type", color = "Unit Type") +
+   scale_x_date(breaks = "day", date_labels = "%m-%d", date_breaks = "2 days", date_minor_breaks = "1 day", expand = c(0, 0.6))+
+  theme_bw() +
+  theme(plot.title = element_text(size = 16, vjust = 2), 
+        legend.position='top', 
+        legend.justification='left',
+        legend.direction='horizontal',
+        legend.title = element_text(size = 10), legend.text = element_text(size = 10),
+        axis.text.x = element_text(size = 10, angle = 45,hjust = 1), 
+        axis.text.y = element_text(size = 10),
+        panel.grid.major = element_line(color = "lightgrey"),
+        panel.grid.minor = element_line(color = "lightgrey"))
+
+asis_output("<h5><i> *Only includes Adult Med Surg, ICU, and ED. </i></h5>")
+asis_output("<h5><i> **Inaccurate census data on 5/17/2020 and 1/19/2021 due to an Epic Upgrade and outage, respectively. </i></h5>")
+asis_output("<h5><i> ***MSBI data starts from its EPIC go-live date on 8/9/2020. </i></h5>")
+asis_output("<h5><i> ****COVID census data not available for 7/11/2021. </i></h5>")
+
+
+```
+</div>
+
+```{r COVID-19 Patients Census by Site, fig.width = 10, echo = FALSE, warning = FALSE, message = FALSE}
+
+covid_census_site <- function(site){
+  #Subset data by site
+    
+    covid_pts_trend_site <- covid_data %>%
+      filter(CensusDate < Sys.Date(), Site == site) %>%
+      select(CensusDate,`COVID19`, SUSC, PUI, PUM)
+ 
+  covid_pts_trend_site <- melt(covid_pts_trend_site, id.vars = c("CensusDate"))
+  covid_pts_trend_site$CensusDate <- as.Date(covid_pts_trend_site$CensusDate, format="%Y-%m-%d")
+  covid_pts_trend_site <- aggregate(covid_pts_trend_site$value, 
+                           by=list(covid_pts_trend_site$CensusDate,covid_pts_trend_site$variable), FUN=sum)
+  
+  colnames(covid_pts_trend_site) <- c("Date","Patient Type","value")
+  
+  covid_census_max <- covid_pts_trend_site%>%
+  group_by(Date) %>%
+  summarise(sum = sum(value))
+  
+  ggplot(covid_pts_trend_site, 
+       aes(x=Date, y=value, fill=factor(`Patient Type`,levels=c("PUM","PUI","SUSC","COVID19"))))+
+  geom_bar(position="stack",stat="identity", width=0.7)+
+  scale_fill_manual(values=c("#d80b8c",	"#00aeef","#E69F00","#212070"))+
+  ggtitle(label=paste0(site,": Hospitalized Census Infection Status (ED and IP)"))+
+  labs(x=NULL, y="Beds Occupied")+
+  guides(fill=guide_legend(title="Patient Type"))+
+  theme_bw()+
+  theme(plot.title = element_text(size = 16, vjust = 2), 
+        legend.position='top', 
+        legend.justification='left',
+        legend.direction='horizontal',
+        legend.title = element_text(size = 10), legend.text = element_text(size = 10), 
+        axis.text.x = element_text(size = 10, angle = 45, hjust = 1),
+        axis.text.y = element_text(size = 10),
+        panel.grid.major = element_line(color = "lightgrey"),
+        panel.grid.minor = element_line(color = "lightgrey"))+
+  scale_y_continuous(limits = c(0, max(covid_census_max$sum)*1.2))+
+   scale_x_date(breaks = "day", date_labels = "%m-%d", date_breaks = "2 days", date_minor_breaks = "1 day", expand = c(0, 0.6))+
+  geom_text(aes(label=value), color="white", 
+            size=2, position = position_stack(vjust = 0.5))+
+  stat_summary(fun.y = sum, vjust = -1, aes(label=ifelse(..y.. == 0,"",..y..), group = Date), 
+               geom="text", color="black", 
+               size=3)
+}
+
+```
+
+
+```{r Hospitalized COVID-19 Patients Census by ED vs. IP by Site, fig.width = 10, echo = FALSE, warning = FALSE, message = FALSE}
+
+covid_pts_census_site <- function(site){
+
+ #Hospitalized covid19 patients census by unit type
+    
+    covid_pts_census <- covid_data %>%
+      filter(CensusDate < Sys.Date(), Site == site) %>%
+      select(CensusDate,`COVID19`, SUSC, PUI, PUM, `Unit Type High`) %>%
+      mutate(total = COVID19 + SUSC + PUI + PUM) %>%
+      group_by(CensusDate, `Unit Type High`) %>%
+      summarise(total = sum(total))
+  
+  
+covid_census_max <- covid_pts_census%>%
+  group_by(CensusDate) %>%
+  summarise(sum = sum(total))
+
+covid_pts_census$CensusDate <- as.Date(covid_pts_census$CensusDate, format="%Y-%m-%d")
+
+ggplot(covid_pts_census, 
+       aes(x=CensusDate, y=total, fill=`Unit Type High`))+
+  geom_bar(position="stack",stat="identity", width=0.7)+
+  scale_fill_manual(values=c("#d80b8c",	"#00aeef","#212070","#7f7f7f"))+
+  ggtitle(label=paste0("\n",site,": Hospitalized COVID-19 Patients Census by ED vs. IP"))+
+  labs(x=NULL, y="Beds Occupied")+
+  guides(fill=guide_legend(title="Unit Type"))+
+  theme_bw()+
+ theme(plot.title = element_text(size = 16, vjust = 2), 
+        legend.position='top', 
+        legend.justification='left',
+        legend.direction='horizontal',
+        legend.title = element_text(size = 10), legend.text = element_text(size = 10), 
+        axis.text.x = element_text(size = 10, angle = 45, hjust = 1),
+        axis.text.y = element_text(size = 10),
+        panel.grid.major = element_line(color = "lightgrey"),
+        panel.grid.minor = element_line(color = "lightgrey"))+
+  scale_y_continuous(limits = c(0, max(covid_census_max$sum)*1.2))+
+  scale_x_date(breaks = "day", date_labels = "%m-%d", date_breaks = "2 days", date_minor_breaks = "1 day", expand = c(0, 0.6))+
+  geom_text(aes(label=total), color="white", 
+            size=2, position = position_stack(vjust = 0.5))+
+  stat_summary(fun.y = sum, vjust = -1, aes(label=ifelse(..y.. == 0,"",..y..), group = CensusDate), 
+               geom="text", color="black", 
+               size=3)
+
+}
+
+```
+
+
+```{r COVID-19 Patients Census Trend by Site, fig.width = 10, echo = FALSE, warning = FALSE, message = FALSE}
+
+covid_census_site_trend <- function(site){
+  
+#Hospitalized covid19 patients census by unit type
+    
+    covid_pts_census <- covid_data %>%
+      filter(CensusDate < Sys.Date(), Site == site) %>%
+      select(CensusDate,`COVID19`, SUSC, PUI, PUM, `Unit Type High`) %>%
+      mutate(total = COVID19 + SUSC + PUI + PUM) %>%
+      group_by(CensusDate, `Unit Type High`) %>%
+      summarise(total = sum(total))
+
+covid_pts_census$CensusDate <- as.Date(covid_pts_census$CensusDate, format="%Y-%m-%d")
+
+#Hospitalized covid19 patients census trend by unit type
+ggplot(data = covid_pts_census) +
+  geom_point(aes(x = CensusDate, y = total, shape = `Unit Type High`, color = `Unit Type High`)) +
+  geom_line(aes(x = CensusDate, y = total, color = `Unit Type High`)) +
+  scale_shape_manual(values = 1:4)+
+  scale_colour_manual(values=c("#d80b8c",	"#00aeef","#212070","#7f7f7f"))+
+  labs(title = paste0("\n",site,": Hospitalized COVID-19 Patients Census Trend"), 
+       x = NULL, y = "Census", shape = "Unit Type", color = "Unit Type") +
+   scale_x_date(breaks = "day", date_labels = "%m-%d", date_breaks = "2 days", date_minor_breaks = "1 day", expand = c(0, 0.6))+
+  theme_bw() +
+  theme(plot.title = element_text(size = 16, vjust = 2), 
+        legend.position='top', 
+        legend.justification='left',
+        legend.direction='horizontal',
+        legend.title = element_text(size = 10), legend.text = element_text(size = 10),
+        axis.text.x = element_text(size = 10, angle = 45,hjust = 1), 
+        axis.text.y = element_text(size = 10),
+        panel.grid.major = element_line(color = "lightgrey"),
+        panel.grid.minor = element_line(color = "lightgrey"))
+  
+}
+
+```
+
+```{r % capacity occupied by unit type by site, fig.width = 10, echo = FALSE, warning = FALSE, message = FALSE}
+
+covid_capacity_site <- function(site) {
+  
+  #% unit capacity occupied by covid19 patients by unit type
+covid_pts_census_perc <- covid_data %>% 
+  filter(CensusDate < Sys.Date(), Site == site) %>%
+  mutate(total = COVID19 + SUSC + PUI + PUM) %>%
+  select(CensusDate,`Unit Type`,total,TOTAL_BED_CENSUS) %>%
+  filter(!is.na(TOTAL_BED_CENSUS)) %>%
+  group_by(CensusDate, `Unit Type`) %>%
+  summarise(occupied = sum(total),
+            total = sum(TOTAL_BED_CENSUS),
+            perc_occupied = occupied / total)
+
+covid_pts_census_perc$CensusDate <- as.Date(covid_pts_census_perc$CensusDate, format="%Y-%m-%d")
+
+ggplot(data = covid_pts_census_perc) +
+  geom_point(aes(x = CensusDate, y = perc_occupied, shape = `Unit Type`, color = `Unit Type`)) +
+  geom_line(aes(x = CensusDate, y = perc_occupied, color = `Unit Type`)) +
+  scale_colour_manual(values=c("#d80b8c",	"#00aeef","#212070"))+
+  labs(title = paste0("\n",site,": Utilization by COVID-19 Patients"), 
+       x = NULL, y = "Occupied Beds / Total Capacity", shape = "Unit Type", color = "Unit Type") +
+   scale_x_date(breaks = "day", date_labels = "%m-%d", date_breaks = "2 days", date_minor_breaks = "1 day", expand = c(0, 0.6))+
+  scale_y_continuous(labels = scales::percent_format(accuracy = 1), limits = c(0,1))+
+  theme_bw() +
+  theme(plot.title = element_text(size = 16, vjust = 2), 
+        legend.position='top', 
+        legend.justification='left',
+        legend.direction='horizontal',
+        legend.title = element_text(size = 10), legend.text = element_text(size = 10),
+        axis.text.x = element_text(size = 10, angle = 45,hjust = 1), 
+        axis.text.y = element_text(size = 10),
+        panel.grid.major = element_line(color = "lightgrey"),
+        panel.grid.minor = element_line(color = "lightgrey"))
+  
+}
+
+```
+
+
+```{r Raw count of covid19 patients by unit (Adult Med Surg), fig.width = 10, echo = FALSE, warning = FALSE, message = FALSE}
+
+covid_pts_unit <- function(site, unitType){
+    
+  covid_pts <- covid_data %>%
+    filter(CensusDate < Sys.Date(), Site == site, `Unit Type` == unitType, VirtualUnit == "FALSE") %>%
+    mutate(total = COVID19 + SUSC + PUI + PUM) %>%
+    filter(total > 0) %>%
+    select(CensusDate,`Unit Type`,DEPARTMENT_NAME, total) %>%
+    group_by(CensusDate, `Unit Type`, DEPARTMENT_NAME) %>%
+    summarise(total = sum(total))
+   
+  
+covid_pts$CensusDate <- as.Date(covid_pts$CensusDate, format="%Y-%m-%d")
+colnames(covid_pts) <- c("CensusDate","Unit Type","Unit","total")
+
+ggplot(covid_pts)+
+    geom_point(aes(x=CensusDate, y=total, shape=Unit, color=Unit))+
+    geom_line(aes(x=CensusDate, y=total, color=Unit))+
+  scale_shape_manual(values = 1:length(unique(covid_pts$Unit)),
+                     guide = guide_legend(nrow = ceiling(length(unique(covid_pts$Unit))/6)))+
+  ggtitle(label=paste0("\n",site," ",unitType,": Total COVID-19 Patients Census"))+
+  labs(x=NULL, y="Beds Occupied")+
+  theme_bw()+
+  theme(plot.title = element_text(size = 16, vjust = 2), 
+        legend.position='top', 
+        legend.justification='left',
+        legend.direction='horizontal',
+        legend.title = element_text(size = 10), legend.text = element_text(size = 10), 
+        axis.text.x = element_text(size = 10, angle = 45, hjust = 1),
+        axis.text.y = element_text(size = 10),
+        panel.grid.major = element_line(color = "lightgrey"),
+        panel.grid.minor = element_line(color = "lightgrey"))+
+  scale_y_continuous(limits = c(0, max(covid_pts$total)*1.2), breaks= pretty_breaks())+
+   scale_x_date(breaks = "day", date_labels = "%m-%d", date_breaks = "2 days", date_minor_breaks = "1 day", expand = c(0, 0.6))
+}
+
+
+```
+
+```{r Raw count of covid19 patients by unit (Virtual Units), fig.width = 10, echo = FALSE, warning = FALSE, message = FALSE}
+
+covid_pts_virtual <- function(site){
+  
+  covid_pts <- covid_data %>%
+   filter(CensusDate < Sys.Date(), Site == site, VirtualUnit == "TRUE") %>%
+   mutate(total = COVID19 + SUSC + PUI + PUM) %>%
+    filter(total > 0) %>%
+   select(CensusDate,DEPARTMENT_NAME, total) %>%
+    group_by(CensusDate, DEPARTMENT_NAME) %>%
+    summarise(total = sum(total))
+
+covid_pts$CensusDate <- as.Date(covid_pts$CensusDate, format="%Y-%m-%d")
+colnames(covid_pts) <- c("CensusDate","Unit","total")
+
+graph <- ggplot(covid_pts)+
+    geom_point(aes(x=CensusDate, y=total, shape=Unit, color=Unit))+
+    geom_line(aes(x=CensusDate, y=total, color=Unit))+
+  scale_shape_manual(values = 1:length(unique(covid_pts$Unit)),
+                     guide = guide_legend(nrow = ceiling(length(unique(covid_pts$Unit))/4)))+
+  ggtitle(label=paste0("\n",site," Virtual Units: Total COVID-19 Patients Census"))+
+  labs(x=NULL, y="Beds Occupied",
+       caption = "\n*Epic virtual units with > 0 beds occupied.")+
+  theme_bw()+
+  theme(plot.title = element_text(size = 16, vjust = 2), 
+        legend.position='top', 
+        legend.justification='left',
+        legend.direction='horizontal',
+        legend.title = element_text(size = 10), legend.text = element_text(size = 10), 
+        axis.text.x = element_text(size = 10, angle = 45, hjust = 1),
+        axis.text.y = element_text(size = 10),
+        panel.grid.major = element_line(color = "lightgrey"),
+        panel.grid.minor = element_line(color = "lightgrey"))+
+  scale_y_continuous(limits = c(0, max(covid_pts$total)*1.2), breaks= pretty_breaks())+
+   scale_x_date(breaks = "day", date_labels = "%m-%d", date_breaks = "2 days", date_minor_breaks = "1 day", expand = c(0, 0.6))
+
+if(nrow(covid_pts)>0){
+  plot(graph)
+  }
+}
+
+```
+
+#### MSB
+<div class="superbigimage">
+```{r MSB COVID-19 confirmed patients, fig.width = 130, echo = FALSE, warning = FALSE, message = FALSE, fig.align = "center"}
+
+covid_census_site(site="MSB")
+asis_output("<h5><i> *Only includes Adult Med Surg, ICU, and ED. </i></h5>")
+asis_output("<h5><i> **Inaccurate census data on 5/17/2020 and 1/19/2021 due to an Epic Upgrade and outage, respectively. </i></h5>")
+asis_output("<h5><i> ***COVID census data not available for 7/11/2021. </i></h5>")
+
+
+```
+</div>
+
+<div class="superbigimage">
+```{r MSB COVID-19 confirmed patients 2, fig.width = 130, echo = FALSE, warning = FALSE, message = FALSE, fig.align = "center"}
+
+covid_pts_census_site(site="MSB")
+asis_output("<h5><i> *Only includes Adult Med Surg, ICU, and ED. </i></h5>")
+asis_output("<h5><i> **Inaccurate census data on 5/17/2020 and 1/19/2021 due to an Epic Upgrade and outage, respectively. </i></h5>")
+asis_output("<h5><i> ***COVID census data not available for 7/11/2021. </i></h5>")
+
+
+```
+</div>
+
+
+<div class="superbigimage">
+
+```{r MSB COVID-19 open beds, fig.width = 80, echo = FALSE, warning = FALSE, message = FALSE, fig.align = "center"}
+
+covid_census_site_trend(site="MSB")
+asis_output("<h5><i> *Only includes Adult Med Surg, ICU, and ED. </i></h5>")
+asis_output("<h5><i> **Inaccurate census data on 5/17/2020 and 1/19/2021 due to an Epic Upgrade and outage, respectively. </i></h5>")
+asis_output("<h5><i> ***COVID census data not available for 7/11/2021. </i></h5>")
+
+```
+</div>
+
+<div class="superbigimage">
+```{r MSB COVID-19 pts by unit, echo = FALSE, warning = FALSE, message = FALSE, fig.width = 80, fig.height = 9, fig.align = "center"}
+
+covid_pts_unit(site="MSB", unitType="Adult Med Surg")
+#covid_pts_unit(site="MSB", unitType="Other")
+#asis_output("<h5><i><center> *COVID-19 patients include all confirmed, PUI and PUM patients. </i></h5></center>")
+
+```
+</div>
+
+```{r MSB COVID-19 pts by virtual unit, echo = FALSE, warning = FALSE, message = FALSE, fig.width = 10, fig.align = "center"}
+
+covid_pts_virtual(site="MSB")
+#asis_output("<h5><i><center> *Epic virtual units with > 0 beds occupied. </i></h5></center>")
+
+```
+
+#### MSBI
+<div class="superbigimage">
+```{r MSBI COVID-19 confirmed patients, fig.width = 130, echo = FALSE, warning = FALSE, message = FALSE, fig.align = "center"}
+
+covid_census_site(site="MSBI")
+asis_output("<h5><i> *Only includes Adult Med Surg, ICU, and ED. </i></h5>")
+asis_output("<h5><i> **MSBI data starts from its EPIC go-live date on 8/9/2020. </i></h5>")
+asis_output("<h5><i> ***COVID census data not available for 7/11/2021. </i></h5>")
+
+
+```
+</div>
+
+<div class="superbigimage">
+```{r MSBI COVID-19 confirmed patients 2, fig.width = 130, echo = FALSE, warning = FALSE, message = FALSE, fig.align = "center"}
+
+covid_pts_census_site(site="MSBI")
+asis_output("<h5><i> *Only includes Adult Med Surg, ICU, and ED. </i></h5>")
+asis_output("<h5><i> **MSBI data starts from its EPIC go-live date on 8/9/2020. </i></h5>")
+asis_output("<h5><i> ***COVID census data not available for 7/11/2021. </i></h5>")
+
+
+```
+</div>
+
+<div class="superbigimage">
+```{r MSBI COVID-19 census trend, fig.width = 80, fig.align = "center", echo = FALSE, warning = FALSE, message = FALSE, fig.align = "center"}
+
+covid_census_site_trend(site="MSBI")
+asis_output("<h5><i> *Only includes Adult Med Surg, ICU, and ED. </i></h5>")
+asis_output("<h5><i> **MSBI data starts from its EPIC go-live date on 8/9/2020. </i></h5>")
+asis_output("<h5><i> ***COVID census data not available for 7/11/2021. </i></h5>")
+
+
+```
+</div>
+
+<div class="superbigimage">
+```{r MSBI COVID-19 open beds, fig.width = 80, echo = FALSE, warning = FALSE, message = FALSE, fig.align = "center"}
+
+covid_pts_unit(site="MSBI", unitType="Adult Med Surg")
+covid_pts_virtual(site="MSBI")
+asis_output("<h5><i> *MSBI data starts from its EPIC go-live date on 8/9/2020. </i></h5>")
+asis_output("<h5><i> ***COVID census data not available for 7/11/2021. </i></h5>")
+
+#asis_output("<h5><i><center> *Epic virtual units with > 0 beds occupied. </i></h5></center>")
+#covid_pts_unit(site="MSB", unitType="Other")
+#asis_output("<h5><i><center> *COVID-19 patients include all confirmed, PUI and PUM patients. </i></h5></center>")
+# covid_capacity_site(site="MSB")
+# asis_output("<h5><i><center> *COVID-19 patients include all confirmed, PUI and PUM patients. </i></h5></center>")
+
+```
+</div>
+
+#### MSH
+<div class="superbigimage">
+```{r MSH COVID-19 confirmed patients, fig.width = 130, fig.align = "center", echo = FALSE, warning = FALSE, message = FALSE, fig.align = "center"}
+
+covid_census_site(site="MSH")
+asis_output("<h5><i> *Only includes Adult Med Surg, ICU, and ED. </i></h5>")
+asis_output("<h5><i> **Inaccurate census data on 5/17/2020 and 1/19/2021 due to an Epic Upgrade and outage, respectively. </i></h5>")
+asis_output("<h5><i> ***COVID census data not available for 7/11/2021. </i></h5>")
+
+
+```
+</div>
+
+<div class="superbigimage">
+```{r MSH COVID-19 confirmed patients 2, fig.width = 130, fig.align = "center", echo = FALSE, warning = FALSE, message = FALSE, fig.align = "center"}
+
+covid_pts_census_site(site="MSH")
+asis_output("<h5><i> *Only includes Adult Med Surg, ICU, and ED. </i></h5>")
+asis_output("<h5><i> **Inaccurate census data on 5/17/2020 and 1/19/2021 due to an Epic Upgrade and outage, respectively. </i></h5>")
+asis_output("<h5><i> ***COVID census data not available for 7/11/2021. </i></h5>")
+
+```
+</div>
+
+<div class="superbigimage">
+```{r MSH COVID-19 open beds, fig.width = 130, fig.align = "center", echo = FALSE, warning = FALSE, message = FALSE, fig.align = "center"}
+
+covid_census_site_trend(site="MSH")
+asis_output("<h5><i> *Only includes Adult Med Surg, ICU, and ED. </i></h5>")
+asis_output("<h5><i> **Inaccurate census data on 5/17/2020 due to an Epic Upgrade. </i></h5>")
+asis_output("<h5><i> ***COVID census data not available for 7/11/2021. </i></h5>")
+
+
+```
+</div>
+
+<div class="superbigimage">
+```{r MSH COVID-19 pts by unit, echo = FALSE, warning = FALSE, message = FALSE, fig.width = 80, fig.height = 9, fig.align = "center"}
+
+covid_pts_unit(site="MSH", unitType="Adult Med Surg")
+#covid_pts_unit(site="MSB", unitType="Other")
+#asis_output("<h5><i><center> *COVID-19 patients include all confirmed, PUI and PUM patients. </i></h5></center>")
+
+```
+</div>
+
+<div class="superbigimage">
+```{r MSH COVID-19 pts by virtual unit, echo = FALSE, warning = FALSE, message = FALSE, fig.width = 80, fig.align = "center"}
+
+covid_pts_virtual(site="MSH")
+#asis_output("<h5><i><center> *Epic virtual units with > 0 beds occupied. </i></h5></center>")
+
+```
+</div>
+
+```{r MSH COVID-19 pts utilization, echo = FALSE, warning = FALSE, message = FALSE, fig.width = 10, fig.align = "center"}
+
+# covid_capacity_site(site="MSH")
+# asis_output("<h6><i><left> *COVID-19 patients include all confirmed, PUI and PUM patients. </i></h6></left>")
+
+```
+
+#### MSM
+<div class="superbigimage">
+```{r MSM COVID-19 confirmed patients, fig.width = 130, echo = FALSE, warning = FALSE, message = FALSE, fig.align = "center"}
+
+covid_census_site(site="MSM")
+asis_output("<h5><i> *Only includes Adult Med Surg, ICU, and ED. </i></h5>")
+asis_output("<h5><i> **Inaccurate census data on 5/17/2020 and 1/19/2021 due to an Epic Upgrade and outage, respectively. </i></h5>")
+asis_output("<h5><i> ***COVID census data not available for 7/11/2021. </i></h5>")
+
+
+```
+</div>
+
+<div class="superbigimage">
+```{r MSM COVID-19 confirmed patients 2, fig.width = 130, echo = FALSE, warning = FALSE, message = FALSE, fig.align = "center"}
+
+covid_pts_census_site(site="MSM")
+asis_output("<h5><i> *Only includes Adult Med Surg, ICU, and ED. </i></h5>")
+asis_output("<h5><i> **Inaccurate census data on 5/17/2020 and 1/19/2021 due to an Epic Upgrade and outage, respectively. </i></h5>")
+asis_output("<h5><i> ***COVID census data not available for 7/11/2021. </i></h5>")
+
+
+```
+</div>
+
+<div class="superbigimage">
+```{r MSM COVID-19 open beds, fig.width = 130, fig.align = "center", echo = FALSE, warning = FALSE, message = FALSE, fig.align = "center"}
+
+covid_census_site_trend(site="MSM")
+asis_output("<h5><i> *Only includes Adult Med Surg, ICU, and ED. </i></h5>")
+asis_output("<h5><i> **Inaccurate census data on 5/17/2020 and 1/19/2021 due to an Epic Upgrade and outage, respectively. </i></h5>")
+asis_output("<h5><i> ***COVID census data not available for 7/11/2021. </i></h5>")
+
+
+```
+</div>
+
+<div class="superbigimage">
+```{r MSM COVID-19 pts by unit, echo = FALSE, warning = FALSE, message = FALSE, fig.width = 80, fig.height = 9, fig.align = "center"}
+
+covid_pts_unit(site="MSM", unitType="Adult Med Surg")
+#covid_pts_unit(site="MSB", unitType="Other")
+#asis_output("<h5><i><center> *COVID-19 patients include all confirmed, PUI and PUM patients. </i></h5></center>")
+
+```
+</div>
+
+```{r MSM COVID-19 pts by virtual unit, echo = FALSE, warning = FALSE, message = FALSE, fig.width = 10, fig.align = "center"}
+
+covid_pts_virtual(site="MSM")
+#asis_output("<h5><i><center> *Epic virtual units with > 0 beds occupied. </i></h5></center>")
+
+```
+
+#### MSQ
+<div class="superbigimage">
+```{r MSQ COVID-19 confirmed patients, fig.width = 130, echo = FALSE, warning = FALSE, message = FALSE, fig.align = "center"}
+
+covid_census_site(site="MSQ")
+asis_output("<h5><i> *Only includes Adult Med Surg, ICU, and ED. </i></h5>")
+asis_output("<h5><i> **Inaccurate census data on 5/17/2020 and 1/19/2021 due to an Epic Upgrade and outage, respectively. </i></h5>")
+asis_output("<h5><i> ***COVID census data not available for 7/11/2021. </i></h5>")
+
+
+```
+</div>
+
+<div class="superbigimage">
+```{r MSQ COVID-19 confirmed patients 2, fig.width = 130, echo = FALSE, warning = FALSE, message = FALSE, fig.align = "center"}
+
+covid_pts_census_site(site="MSQ")
+asis_output("<h5><i> *Only includes Adult Med Surg, ICU, and ED. </i></h5>")
+asis_output("<h5><i> **Inaccurate census data on 5/17/2020 and 1/19/2021 due to an Epic Upgrade and outage, respectively. </i></h5>")
+asis_output("<h5><i> ***COVID census data not available for 7/11/2021. </i></h5>")
+
+
+```
+</div>
+
+<div class="superbigimage">
+```{r MSQ COVID-19 open beds, fig.width = 130, fig.align = "center", echo = FALSE, warning = FALSE, message = FALSE, fig.align = "center"}
+
+covid_census_site_trend(site="MSQ")
+asis_output("<h5><i> *Only includes Adult Med Surg, ICU, and ED. </i></h5>")
+asis_output("<h5><i> **Inaccurate census data on 5/17/2020 and 1/19/2021 due to an Epic Upgrade and outage, respectively. </i></h5>")
+asis_output("<h5><i> ***COVID census data not available for 7/11/2021. </i></h5>")
+
+
+```
+</div>
+
+<div class="superbigimage">
+```{r MSQ COVID-19 pts by unit, echo = FALSE, warning = FALSE, message = FALSE, fig.width = 80, fig.height = 9, fig.align = "center"}
+
+covid_pts_unit(site="MSQ", unitType="Adult Med Surg")
+#covid_pts_unit(site="MSB", unitType="Other")
+#asis_output("<h5><i><center> *COVID-19 patients include all confirmed, PUI and PUM patients. </i></h5></center>")
+
+```
+</div>
+
+```{r MSQ COVID-19 pts by virtual unit, echo = FALSE, warning = FALSE, message = FALSE, fig.width = 10, fig.align = "center"}
+
+covid_pts_virtual(site="MSQ")
+#asis_output("<h5><i><center> *Epic virtual units with > 0 beds occupied. </i></h5></center>")
+
+```
+
+#### MSSN
+<div class="superbigimage">
+```{r MSSN COVID-19 confirmed patients, fig.width = 130, echo = FALSE, warning = FALSE, message = FALSE, fig.align = "center"}
+
+covid_census_site(site="MSSN")
+asis_output("<h5><i> *ED vs. IP breakdown is not availble for MSSN due to data limitation. </i></h5>")
+asis_output("<h5><i> **Excludes PUI, PUM and SUSC data due to data limitations. </i></h5>")
+
+
+```
+</div>
+
+<div class="superbigimage">
+```{r MSSN COVID-19 confirmed patients 2, fig.width = 80, echo = FALSE, warning = FALSE, message = FALSE, fig.align = "center"}
+
+covid_pts_census_site(site="MSSN")
+asis_output("<h5><i> *Only includes Adult Med Surg, ICU, and ED. </i></h5>")
+asis_output("<h5><i> **Excludes PUI, PUM and SUSC data due to data limitations. </i></h5>")
+
+```
+</div>
+
+<div class="superbigimage">
+```{r MSSN COVID-19 open beds, fig.width = 80, fig.align = "center", echo = FALSE, warning = FALSE, message = FALSE, fig.align ="center"}
+
+covid_census_site_trend(site="MSSN")
+asis_output("<h5><i> *Only includes Adult Med Surg, ICU, and ED. </i></h5>")
+asis_output("<h5><i> **Excludes PUI, PUM and SUSC data due to data limitations. </i></h5>")
+
+```
+</div>
+
+<!-- <div class="superbigimage"> -->
+<!-- ```{r MSSN COVID-19 pts by unit, echo = FALSE, warning = FALSE, message = FALSE, fig.width = 80, fig.height = 9, fig.align = "center"} -->
+
+<!-- covid_pts_unit(site="MSSN", unitType="Adult Med Surg") -->
+<!-- asis_output("<h5><i> *Only includes Adult Med Surg, ICU, and ED. </i></h5>") -->
+<!-- asis_output("<h5><i> **Excludes PUI, PUM and SUSC data due to data limitations. </i></h5>") -->
+<!-- #covid_pts_unit(site="MSB", unitType="Other") -->
+<!-- #asis_output("<h5><i><center> *COVID-19 patients include all confirmed, PUI and PUM patients. </i></h5></center>") -->
+
+<!-- ``` -->
+<!-- </div> -->
+
+```{r MSSN COVID-19 pts by virtual unit, echo = FALSE, warning = FALSE, message = FALSE, fig.width = 10, fig.align = "center"}
+
+# covid_pts_virtual(site="MSQ")
+#asis_output("<h5><i><center> *Epic virtual units with > 0 beds occupied. </i></h5></center>")
+
+```
+
+#### MSW
+<div class="superbigimage">
+```{r MSW COVID-19 confirmed patients, fig.width = 130, echo = FALSE, warning = FALSE, message = FALSE, fig.align = "center"}
+
+covid_census_site(site="MSW")
+asis_output("<h5><i> *Only includes Adult Med Surg, ICU, and ED. </i></h5>")
+asis_output("<h5><i> **Inaccurate census data on 5/17/2020 and 1/19/2021 due to an Epic Upgrade and outage, respectively. </i></h5>")
+asis_output("<h5><i> ***COVID census data not available for 7/11/2021. </i></h5>")
+
+
+```
+</div>
+
+<div class="superbigimage">
+```{r MSW COVID-19 confirmed patients 2, fig.width = 130, echo = FALSE, warning = FALSE, message = FALSE, fig.align = "center"}
+
+covid_pts_census_site(site="MSW")
+asis_output("<h5><i> *Only includes Adult Med Surg, ICU, and ED. </i></h5>")
+asis_output("<h5><i> **Inaccurate census data on 5/17/2020 and 1/19/2021 due to an Epic Upgrade and outage, respectively. </i></h5>")
+asis_output("<h5><i> ***COVID census data not available for 7/11/2021. </i></h5>")
+
+
+```
+</div>
+
+<div class="superbigimage">
+```{r MSW COVID-19 open beds, fig.width = 130, fig.align = "center", echo = FALSE, warning = FALSE, message = FALSE, fig.align = "center"}
+
+covid_census_site_trend(site="MSW")
+asis_output("<h5><i> *Only includes Adult Med Surg, ICU, and ED. </i></h5>")
+asis_output("<h5><i> **Inaccurate census data on 5/17/2020 and 1/19/2021 due to an Epic Upgrade and outage, respectively. </i></h5>")
+asis_output("<h5><i> ***COVID census data not available for 7/11/2021. </i></h5>")
+
+
+```
+</div>
+
+<div class="superbigimage">
+```{r MSW COVID-19 pts by unit, echo = FALSE, warning = FALSE, message = FALSE, fig.width = 80, fig.height = 9, fig.align = "center"}
+
+covid_pts_unit(site="MSW", unitType="Adult Med Surg")
+#covid_pts_unit(site="MSB", unitType="Other")
+#asis_output("<h5><i><center> *COVID-19 patients include all confirmed, PUI and PUM patients. </i></h5></center>")
+
+```
+</div>
+
+```{r MSW COVID-19 pts by virtual unit, echo = FALSE, warning = FALSE, message = FALSE, fig.width = 10, fig.align = "center"}
+
+covid_pts_virtual(site="MSW")
+#asis_output("<h5><i><center> *Epic virtual units with > 0 beds occupied. </i></h5></center>")
+
+```
+
+
+### {-}
+
