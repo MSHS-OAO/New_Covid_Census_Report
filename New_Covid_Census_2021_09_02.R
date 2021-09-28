@@ -4,6 +4,7 @@
 
 rm(list=ls())
 
+
 # Install packages
 #install.packages("tidyverse")
 #install.packages("reshape2")
@@ -26,21 +27,21 @@ library(rmarkdown)
 
 # Set working directory
 Census_path <- "J:/deans/Presidents/HSPI-PM/Operations Analytics and Optimization/Projects/System Operations/Covid IP Staffing Model/Data/Epic Census Data"
-#Census_path <- "C:\\Users\\aghaer01\\Downloads\\Covid"
 setwd(Census_path)
 
-
+dates_pattern <-  seq(Sys.Date()-5, Sys.Date(), by='day')
+  
 #Import the latest REPO file 
-repo <- file.info(list.files(path = paste0(Census_path,"/REPO"), full.names = T , pattern =paste0("Census and Covid Repo 2020-03-12 to ",  format(Sys.Date(), "%Y-%m"))))
+repo <- file.info(list.files(path = paste0(Census_path,"/REPO"), full.names = T , pattern =paste0("Census and Covid Repo 2020-03-12 to ", dates_pattern, collapse = "|"  )))
 repo_file <- rownames(repo)[which.max(repo$ctime)]
 repo <- read_excel(repo_file)
 
-#repo <- read_excel(paste0(Census_path,"/REPO/Census and Covid Repo 2020-03-12 to ", Sys.Date()-2, " Created ", Sys.Date()-1, " Add MSBI.xlsx"))
+# Check the most recent censusDate
 max(repo$CensusDate)
 
 
 # Import the most recent census data
-census = file.info(list.files(path= Census_path, full.names=TRUE, pattern=paste0("ADT_Bed_Census_Daily_By_Dept_Summary.rpt_", format(Sys.Date(), "%Y-%m-"))))
+census = file.info(list.files(path= Census_path, full.names=TRUE, pattern=paste0("ADT_Bed_Census_Daily_By_Dept_Summary.rpt_",  dates_pattern, collapse = "|" )))
 census = census[with(census, order(as.POSIXct(ctime), decreasing = TRUE)), ]
 
 dif_time= difftime(max(repo$CensusDate), Sys.Date()-1)
@@ -56,7 +57,7 @@ rm(census, todays_census_raw)
 
 
 # Import the most recent Covid data
-covid = file.info(list.files(path= Census_path, full.names=TRUE, pattern=paste0("^COVID Census Prior Day.rpt_",  format(Sys.Date(), "%Y-%m-"))))
+covid = file.info(list.files(path= Census_path, full.names=TRUE, pattern=paste0("^COVID Census Prior Day.rpt_",   dates_pattern, collapse = "|")))
 covid = covid[with(covid, order(as.POSIXct(ctime), decreasing = TRUE)), ]
 
 files = rownames(covid)[1:count]
@@ -118,6 +119,8 @@ todays_covid_data <- left_join(todays_covid_data, site_mapping,  by = c("LOC_NAM
 
 # Check data to see if there is data from an extra date
 table(todays_covid_data$CensusDate)
+
+
 todays_covid_data <- todays_covid_data %>%  filter(CensusDate != Sys.Date())
 
 # Remove any duplicates lines from COVID data
@@ -216,7 +219,8 @@ new_repo <- new_repo %>% filter(!is.na(Site))
 start_date <- min(new_repo$CensusDate)
 end_date <- max(new_repo$CensusDate)
 
-write_xlsx(new_repo, path = paste0(Census_path, "\\REPO\\Census and Covid Repo ", start_date, " to ", end_date, " Created ", Sys.Date(), " Add MSBI.xlsx"))
+write_xlsx(new_repo, path = paste0(Census_path, "\\REPO\\Census and Covid Repo ", 
+                                   start_date, " to ", end_date, " Created ", Sys.Date(), " Add MSBI.xlsx"))
 
 
 
@@ -233,21 +237,63 @@ setwd("../MSSN COVID")
 mssn_path <- getwd()
 
 # Read the new MSSN data
-mssn <- read_excel(paste0(mssn_path, "\\Patient Details - ", Sys.Date(), ".xlsx"))
+covid_data_mssn <- read_excel(paste0(mssn_path, "\\Patient Details - ", Sys.Date(), ".xlsx"))
 
-# read mapping mssn
-unit_mapping_mssn_covid  <- read_excel("MSSN Unit Mapping 12-15-2020.xlsx", col_names = TRUE, na = c("", "NA"))
+# Status column
+colnames(covid_data_mssn )[colnames(covid_data_mssn ) == "COVID +  Cond"] <- "status"
+covid_data_mssn  <- covid_data_mssn  %>% mutate(status=ifelse(status=="Covid+", "COVID19", status))
+
+# Create Unit Type High
+covid_data_mssn  <- covid_data_mssn  %>% 
+     mutate(`Unit Type High` = ifelse(`Pat Class` %in% "I", "IP", ifelse(`Pat Class` %in% "E", "ED", "Other")))
+
+
+# Change date format
+covid_data_mssn  <- covid_data_mssn %>% mutate(AdmitDate = as.Date(`Admit date`, "%m/%d/%Y"),
+                        DischargeDate = as.Date(`Discharge Date`, "%m/%d/%Y"))
+
+
+#Create Census Date
+covid_data_mssn  <- covid_data_mssn %>% mutate(end_date = ifelse(is.na(DischargeDate), Sys.Date(), DischargeDate))
+covid_data_mssn  <- covid_data_mssn %>%  mutate(end_date = as.Date(end_date, "1970-01-01"),
+                         los = as.integer(end_date - AdmitDate))  %>% filter(los > 0)
+
+
+covid_data_mssn  <- covid_data_mssn <- covid_data_mssn[rep(seq(nrow(covid_data_mssn)), times = covid_data_mssn$los),]
+covid_data_mssn  <- covid_data_mssn %>% group_by(Visitid, Medrec, status, `Unit Type High`, AdmitDate, DischargeDate, end_date) %>%
+                                                      mutate(number = 1:n(), CensusDate = AdmitDate + (number - 1)) %>%
+                   select(Visitid, Medrec, status, `Unit Type High`, AdmitDate, DischargeDate, end_date, los, CensusDate )
+
+covid_data_mssn <- unique(covid_data_mssn)
+
+
+# ip covid MSSN census
+ip_covid_MSSN_census <- covid_data_mssn %>% group_by(CensusDate, `Unit Type High`) %>%  summarise(COVID19 = n()) %>% 
+                                                                                   filter(CensusDate > as.Date("2020-03-11"))
+
+
+ip_covid_MSSN_census <- ip_covid_MSSN_census %>%  mutate(Site = "MSSN", SUSC = 0, PUI = 0, PUM = 0) %>% 
+                                                         select(Site, CensusDate, COVID19, SUSC, PUI, PUM, `Unit Type High` ) 
+
+
+
+# Add to new repo
+new_repo <- new_repo %>%  mutate(`non-COVID19` = OCCUPIED_COUNT - `COVID19` - SUSC - PUI - PUM,
+       `Open Beds` = TOTAL_BED_CENSUS - OCCUPIED_COUNT,
+       `Unit Type` = ifelse(UnitType == "Other", "Other", 
+                            ifelse(UnitType == "NCC", "Adult Med Surg", ifelse(UnitType == "CC", "Adult Med Surg", "ED"))),
+       `Unit Type High` = ifelse(UnitType != "ED", "IP", "ED"))
+
+ 
+raw_data <- dplyr::bind_rows(new_repo, ip_covid_MSSN_census)
+
 
 setwd(Census_path)
 setwd("../..")
 
-#setwd("C:\\Users\\aghaer01\\Downloads")
 
 save_output <- paste0(getwd(), "\\Daily Reporting Output")
-rmarkdown::render("Code\\Epic Unit and COVID Census Analysis REPORT 2020-12-15_Inc_MSSN_New_Report_v2.Rmd", output_file = paste("Epic Census and Covid Daily Reporting", Sys.Date()), output_dir = save_output)
-
-
-
+rmarkdown::render("Code\\New Epic Unit and COVID Census Analysis REPORT 2021-09-27_Inc_MSSN_New_Report.Rmd", output_file = paste("Epic Census and Covid Daily Reporting", Sys.Date()), output_dir = save_output)
 
 
 
