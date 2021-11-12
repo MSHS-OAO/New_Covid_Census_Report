@@ -78,8 +78,6 @@ MountSinai_cols <- function(...) {
 types_pallete <- c("#00aeef", "#7f7f7f","#3a5fcd", "#5753d0", "#d80b8c", "#e69f00", "#8b814c", "#212070")
 
 # Color Function that can be used to call all colors is "MountSinai_cols()"
-# Use in ggplot 
-
 #MountSinai_cols()       # will provide all colors and their hex codes in a table 
 #MountSinai_cols("pink") # will provide color name and the hex code for the pink color
 
@@ -210,7 +208,7 @@ covid_pts_trend_max_site <- covid_pts_trend_site %>% group_by(Date, Site) %>% su
 
 
 
-## Data for site_plot2 and msb_plot3
+## Data for site_plot2 and siteb_plot3
 covid_pts_census_site <- covid_data %>% filter(CensusDate < Sys.Date() )%>%
   select(CensusDate, Site, `COVID19`, SUSC, PUI, PUM, `Unit Type High`) %>% mutate(total = COVID19 + SUSC + PUI + PUM) %>%
   group_by(CensusDate, Site, `Unit Type High`) %>% summarise(total = sum(total))
@@ -311,8 +309,8 @@ ui <- dashboardPage(
                 box(plotOutput("main_plot2"),  width= 250,
                     title = "MSHS Hospitalized Census by Infection Status (ED and IP)", status = "primary",
                     solidHeader = TRUE, collapsible = TRUE, closable = TRUE,
-                           dateRangeInput("Date", strong("Select Date range"), start = min(covid_pts_trend$Date), 
-                                          end = max(covid_pts_trend$Date),  min = "2020-03-12", max = Sys.Date()-1)))),
+                           dateRangeInput("Date", strong("Select Date range"), start = "2021-08-01", #min(covid_pts_trend$Date), 
+                                          end = max(covid_pts_trend$Date),  min = "2020-03-12", max = Sys.Date()-1, width =250)))),
               
               
              fluidRow(
@@ -320,8 +318,8 @@ ui <- dashboardPage(
                box(plotOutput("main_plot3"),  width= 250,
                    title = "MSHS Hospitalized COVID-19 Patients Census by ED vs. IP", status = "primary",
                    solidHeader = TRUE, collapsible = TRUE, closable = TRUE,
-                   dateRangeInput("CensusDate", strong("Select Date range"), start = min(covid_pts_census$CensusDate), 
-                                  end = max(covid_pts_census$CensusDate),  min = "2020-03-12", max = Sys.Date()-1)))),
+                   dateRangeInput("CensusDate", strong("Select Date range"), start = "2021-08-01", 
+                                  end = max(covid_pts_census$CensusDate),  min = "2020-03-12", max = Sys.Date()-1, width =250)))),
              
              fluidRow(
                column(11,
@@ -330,9 +328,9 @@ ui <- dashboardPage(
                    solidHeader = TRUE, collapsible = TRUE, closable = TRUE,
                    selectInput(inputId = "UnitTypeHigh", label = strong("Select Unit Type"),
                                choices = unique(covid_pts_census$`Unit Type High`),
-                               selected = "COVID19"),
-                   dateRangeInput("CensusDate0", strong("Select Date range"), start = min(covid_pts_census$CensusDate), 
-                                  end = max(covid_pts_census$CensusDate),  min = "2020-03-12", max = Sys.Date()-1)))),
+                               selected = "COVID19", width =250),
+                   dateRangeInput("CensusDate0", strong("Select Date range"), start = "2021-08-01", 
+                                  end = max(covid_pts_census$CensusDate),  min = "2020-03-12", max = Sys.Date()-1, width =250)))),
             ),
       
              
@@ -343,8 +341,8 @@ ui <- dashboardPage(
                 box(plotOutput("msb_plot1"),  width= 250,
                     title = "MSB: Hospitalized Census by Infection Status (ED and IP)", status = "primary",
                     solidHeader = TRUE, collapsible = TRUE, closable = TRUE,
-                    dateRangeInput("Date1", strong("Select Date range"), start = min(covid_pts_trend_site$Date), 
-                                   end = max(covid_pts_trend_site$Date),  min = "2020-03-12", max = Sys.Date()-1)))),
+                    dateRangeInput("Date1", strong("Select Date range"), start = "2021-08-01",
+                                   end = max(covid_pts_trend_site$Date),  min = "2020-03-12", max = Sys.Date()-1, width =250)))),
               
       
              fluidRow(
@@ -352,8 +350,8 @@ ui <- dashboardPage(
                 box(plotOutput("msb_plot2"),  width= 250,
                     title = "MSB Hospitalized COVID-19 Patients Census by ED vs. IP", status = "primary",
                     solidHeader = TRUE, collapsible = TRUE, closable = TRUE,
-                    dateRangeInput("CensusDate1", strong("Select Date range"), start = min(covid_pts_census_site$CensusDate), 
-                                   end = max(covid_pts_census_site$CensusDate),  min = "2020-03-12", max = Sys.Date()-1)))),
+                    dateRangeInput("CensusDate1", strong("Select Date range"), start = "2021-08-01", 
+                                   end = max(covid_pts_census_site$CensusDate),  min = "2020-03-12", max = Sys.Date()-1, width =250)))),
               
               fluidRow(
                 column(11,
@@ -362,9 +360,9 @@ ui <- dashboardPage(
                     solidHeader = TRUE, collapsible = TRUE, closable = TRUE,
                     selectInput(inputId = "UnitTypeHigh1", label = strong("Select Unit Type"),
                                 choices = unique(covid_pts_census_site$`Unit Type High`[covid_pts_census_site$Site=="MSB"]),
-                                selected = "COVID19"),
-                    dateRangeInput("CensusDate2", strong("Select Date range"), start = min(covid_pts_census_site$CensusDate), 
-                                   end = max(covid_pts_census_site$CensusDate),  min = "2020-03-12", max = Sys.Date()-1)))),
+                                selected = "COVID19", width =250),
+                    dateRangeInput("CensusDate2", strong("Select Date range"), start = "2021-08-01",
+                                   end = max(covid_pts_census_site$CensusDate),  min = "2020-03-12", max = Sys.Date()-1, width =250)))),
              
              fluidRow(
                column(11,
@@ -373,9 +371,9 @@ ui <- dashboardPage(
                    solidHeader = TRUE, collapsible = TRUE, closable = TRUE,
                    selectInput(inputId = "Unit", label = strong("Select Unit"),
                                choices = unique(covid_pts$Unit[covid_pts$Site== "MSB"]),
-                               selected = "MSB 2 EAST"),
-                   dateRangeInput("CensusDate3", strong("Select Date range"), start = min(covid_pts$CensusDate), 
-                                  end = max(covid_pts$CensusDate),  min = "2020-03-12", max = Sys.Date()-1)))),
+                               selected = "MSB 2 EAST", width =250),
+                   dateRangeInput("CensusDate3", strong("Select Date range"), start ="2021-08-01",
+                                  end = max(covid_pts$CensusDate),  min = "2020-03-12", max = Sys.Date()-1, width =250)))),
              
              fluidRow(
                column(11,
@@ -385,9 +383,9 @@ ui <- dashboardPage(
                    h5("Epic virtual units with > 0 beds occupied."),
                    selectInput(inputId = "Unit1", label = strong("Select Unit"),
                                choices = unique(covid_pts_vu$Unit[covid_pts_vu$Site== "MSB"]),
-                               selected =  "MSB PACU VU1"),
+                               selected =  "MSB PACU VU1", width =250),
                    dateRangeInput("CensusDate4", strong("Select Date range"), start = min(covid_pts_vu$CensusDate), 
-                                  end = max(covid_pts_vu$CensusDate),  min = "2020-03-12", max = Sys.Date()-1)))),
+                                  end = max(covid_pts_vu$CensusDate),  min = "2020-03-12", max = Sys.Date()-1, width =250)))),
       )
              
      )
