@@ -36,7 +36,7 @@ setwd(Census_path)
 # Read the census repo file countaining the MSSN data
 covid_data <- read_excel(paste0("Census and Covid Repo 2020-03-12 to ", Sys.Date()-1, " Created ", Sys.Date(), " Add MSSN.xlsx"))
 
-
+max(covid_data$CensusDate)
 
 # Report Update date
 repo_start_date <- format(min(covid_data$CensusDate), "%m-%d-%Y")
@@ -66,9 +66,16 @@ covid_loc <- covid_loc %>% group_by(Site, `Unit Type High`) %>% summarise(total 
 covid_loc <- covid_loc %>%  mutate(`Unit Type High`= ifelse(is.na(`Unit Type High`), "Other", `Unit Type High`))
 
 
+## Adult med surge Unit
+selected_site <- unique(covid_data$Site)
+Adult_med_surge <- covid_data %>% filter(CensusDate < Sys.Date(), `Unit Type` == "Adult Med Surg", VirtualUnit == "FALSE")
+Adult_med_choices <- sort(unique(Adult_med_surge$DEPARTMENT_NAME[Adult_med_surge$Site %in% selected_site ]))
 
 
 
+## Virtual Unit
+Virtual_Unit <- covid_data %>% filter(CensusDate < Sys.Date(),  VirtualUnit == "TRUE") 
+Virtual_unit_choices <- sort(unique(Virtual_Unit$DEPARTMENT_NAME[Virtual_Unit$Site %in% selected_site ]))
 
 # Shiny UI   ==================================================
 
@@ -197,22 +204,66 @@ ui <- dashboardPage(
       ), # Close MSHS Tabitem
       
       ### tabItem for Sites  =========================================================================================
+       
+      
       tabItem(tabName = "sites",
               fluidRow(
                 column(11,
-                       box(plotOutput("site_plot1"),  width= 250,
-                           title = "Hospitalized Census by Infection Status (ED and IP)", status = "primary",
+                       box(plotOutput("site_plot1"),  width= 12,
+                           title = "By Infection Status", status = "primary",
                            solidHeader = TRUE, collapsible = TRUE, closable = TRUE)),
                           
               
+                
                 column(11,
-                       box(plotOutput("site_plot2"),  width= 250,
-                           title = "Hospitalized Census by Infection Status Yearly Comparison", status = "primary",
+                       box(plotOutput("site_plot2"),  width= 12,
+                           title = "By Patient Setting", status = "primary",
+                           solidHeader = TRUE, collapsible = TRUE, closable = TRUE )),
+                
+                column(11,
+                       box(plotOutput("site_plot3"),  width= 12,
+                           title = "Trend By Patient Setting", status = "primary",
                            solidHeader = TRUE, collapsible = TRUE, closable = TRUE,
-                           selectInput(inputId = "Site_PatientType", label = strong("Patient Type"),
-                                       choices = c("COVID19", "SUSC", "PUI" ),
-                                       selected = "COVID19 ", width =250))),
+                           box(width= 3,
+                               pickerInput(inputId = "site_UnitTypeHigh", label = strong("Select Unit Type"), multiple = T, 
+                                           choices = c("IP", "ED"), selected = "IP", width =250)))),
+                                           
+                
+               
+                  column(11,
+                         box(plotOutput("site_plot4"),  width= 12,
+                             title = "Adult Surg Med: Total COVID-19 Patients Census", status = "primary",
+                             solidHeader = TRUE, collapsible = TRUE, closable = TRUE,
+                             box(width=3, 
+                                 pickerInput(inputId = "site_Unit", label = strong("Select Unit"), 
+                                             choices = Adult_med_choices, selected = Adult_med_choices, width =250, multiple = TRUE)))),
+                
+                                             
               
+                column(11,
+                       box(plotOutput("site_plot5"),  width= 12,
+                           title = "Virtual Units: Total COVID-19 Patients Census", status = "primary",
+                           solidHeader = TRUE, collapsible = TRUE, closable = TRUE,
+                           box(width=3,
+                               pickerInput(inputId = "site_VUnit", label = strong("Select Unit"), multiple = TRUE,
+                                           choices = Virtual_unit_choices, selected =  Virtual_unit_choices, width =250)) )), 
+                                           
+                           
+                column(11,
+                       box(plotOutput("site_plot6"),  width= 6,
+                           title = "Yearly Comparison by Infection Status", status = "primary",
+                           solidHeader = TRUE, collapsible = TRUE, closable = TRUE,
+                           selectInput(inputId = "site_PatientType", label = strong("Select Patient Type"),
+                                       choices = c("COVID19", "SUSC", "PUI", "PUM"),
+                                       selected = "COVID19", width =250)),
+                
+               
+                       box(plotOutput("site_plot7"),  width= 6,
+                           title = "Yearly Comparison by  Patient Setting", status = "primary",
+                           solidHeader = TRUE, collapsible = TRUE, closable = TRUE,
+                           selectInput(inputId = "site_UnitTypeHigh1", label = strong("Select Unit Type"),
+                                       choices = c("IP", "ED") ,
+                                       selected = "IP", width =250))),
               
               
               
@@ -233,27 +284,20 @@ ui <- dashboardPage(
                        
                        box(width = 12, height = "100px", title = "Select Site:", solidHeader = F,
                            pickerInput("selectedSite",label= NULL, multiple= F,
-                                       choices = sort( unique(covid_data$Site)) ,  
-                                       selected = "MSB")),
-                       
+                                       choices = sort( unique(covid_data$Site)),  selected = "MSB")),
+                                       
                        
                        box(width = 12, height = "100px",
-                           title = "Select Date Range:",
-                           solidHeader = FALSE, 
-                           dateRangeInput("DateRange1", label = NULL,
-                                          start = start_date, end = Sys.Date()-1,
+                           title = "Select Date Range:", solidHeader = FALSE, 
+                           dateRangeInput("DateRange1", label = NULL, start = start_date, end = Sys.Date()-1,
                                           min = min(covid_data$CensusDate), max = max(covid_data$CensusDate)))
                        
+                       
               ) # close dropdown
-              
            ) # close fluidrow
-                       
-                       
-      )# Close Site Tabitem
+        )# Close Site Tabitem
       
-      
-      
-    )
+     )
     
   )
   
@@ -266,7 +310,7 @@ server <- function(input, output, session) {
           MSHS_Data  <- eventReactive(input$FiltersUpdate, {
           validate( need(input$DateRange[1] < input$DateRange[2], "Error: Start date should be earlier than end date."))
           covid_data %>% filter( 
-                          CensusDate > as.Date(input$DateRange[1]) & CensusDate < as.Date(input$DateRange[2] ))
+                          CensusDate > as.Date(input$DateRange[1]) & CensusDate <= as.Date(input$DateRange[2] ))
           }, ignoreNULL = FALSE)
   
   
@@ -465,7 +509,6 @@ server <- function(input, output, session) {
           covid_pts_trend <- aggregate(covid_pts_trend$value, by=list(covid_pts_trend$CensusDate,covid_pts_trend$variable), FUN=sum)
           colnames(covid_pts_trend) <- c("CensusDate","Patient Type","value")
           
-          covid_census_max <- covid_pts_trend %>% group_by(CensusDate) %>% summarise(sum = sum(value))
           
           
           ##  year over year comparison by infection status
@@ -475,6 +518,7 @@ server <- function(input, output, session) {
           covid_pts_trend_avg <- covid_pts_trend_avg %>% filter(`Patient Type` %in% input$MSHS_PatientType)%>%
                                   group_by(year, month) %>% summarise(Average= ceiling( mean(value)))
           covid_pts_trend_avg <- covid_pts_trend_avg %>% mutate(month= month.abb[as.numeric(month)])
+          covid_census_max <- covid_pts_trend_avg %>% group_by(year, month) %>% summarise(sum = sum(Average))
     
           
           ggplot(covid_pts_trend_avg) +
@@ -484,18 +528,20 @@ server <- function(input, output, session) {
                       size=4, hjust=0.2, vjust=-1)+
             scale_shape_manual(values = 1:4)+
             scale_color_manual(values=c("#d80b8c",	"#00aeef", "#863198"))+
-            labs(title = "\nMSHS Hospitalized COVID-19 Patients Census Trend", 
-                 x = NULL, y = "Census", shape = "Unit Type", color = "Unit Type") +
+            ggtitle(label=paste0("\n","Monthly Average COVID-19 Patients Census Over Year"))+
+            labs(x = NULL, y = "Census", shape = "Unit Type", color = "Unit Type") +
             scale_x_discrete(limits = month.abb)+
             labs(x = NULL, y = "Monthly Average Beds Occupied", color =" year") +
             theme_bw() +
-            theme(legend.position='top', 
+            theme(plot.title = element_text(size = 16, vjust = 2),
+                  legend.position='top', 
                   legend.justification='left',
                   legend.direction='horizontal',
                   axis.text.x = element_text(size = 10, angle = 45,hjust = 1), 
                   axis.text.y = element_text(size = 10),
                   panel.grid.major = element_line(color = "lightgrey"),
-                  panel.grid.minor = element_line(color = "lightgrey"))
+                  panel.grid.minor = element_line(color = "lightgrey"))+
+            scale_y_continuous(limits = c(0, max(covid_census_max$sum)*1.2), breaks= pretty_breaks())
           
         })
         
@@ -520,6 +566,7 @@ server <- function(input, output, session) {
           covid_pts_avg <- covid_pts_avg %>%  filter(`Unit Type High` %in% input$MSHS_UnitTypeHigh)  %>%
                                               group_by(year, month) %>% summarise(Average= ceiling( mean(total)))
           covid_pts_avg <- covid_pts_avg %>% mutate(month= month.abb[as.numeric(month)])
+          covid_pts_max <- covid_pts_avg %>% group_by(year, month) %>% summarise(sum = sum(Average))
           
           
           ggplot(covid_pts_avg) +
@@ -527,18 +574,21 @@ server <- function(input, output, session) {
             geom_point(aes(x = month, y = Average,  color = year)) +
             geom_text(aes(x =month, y = Average, label=ceiling( Average)), color="#212070", 
                       size=4, hjust=0.2, vjust= -1)+
+            ggtitle(label=paste0("\n","Monthly Average COVID-19 Patients Census Over Year"))+
             scale_shape_manual(values = 1:4)+
             scale_color_manual(values=c("#d80b8c",	"#00aeef", "#863198"))+
             scale_x_discrete(limits = month.abb)+
             labs(x = NULL, y = "Monthly Average Census", color =" year") +
             theme_bw() +
-            theme(legend.position='top', 
+            theme(plot.title = element_text(size = 16, vjust = 2),
+                  legend.position='top', 
                   legend.justification='left',
                   legend.direction='horizontal',
                   axis.text.x = element_text(size = 10, angle = 45,hjust = 1), 
                   axis.text.y = element_text(size = 10),
                   panel.grid.major = element_line(color = "lightgrey"),
-                  panel.grid.minor = element_line(color = "lightgrey"))
+                  panel.grid.minor = element_line(color = "lightgrey"))+
+            scale_y_continuous(limits = c(0, max(covid_pts_max$sum)*1.2), breaks= pretty_breaks())
           
         })
         
@@ -550,13 +600,13 @@ server <- function(input, output, session) {
           validate( need(input$selectedSite != "" , "Please Select a Site"),
                     need(input$DateRange1[1] < input$DateRange1[2], "Error: Start date should be earlier than end date."))
           covid_data %>% filter(Site %in% input$selectedSite , 
-                                CensusDate > as.Date(input$DateRange1[1]) & CensusDate < as.Date(input$DateRange1[2] ))
+                                CensusDate > as.Date(input$DateRange1[1]) & CensusDate <= as.Date(input$DateRange1[2] ))
         }, ignoreNULL = FALSE)
         
         
         
         output$site_plot1 <- renderPlot({
-          
+
         site_data <- Site_Data()
         
         covid_pts_trend_site <- site_data  %>% filter(CensusDate < Sys.Date()) %>% select(CensusDate, Site, `COVID19`, SUSC, PUI, PUM)
@@ -595,6 +645,288 @@ server <- function(input, output, session) {
                        geom="text", color="black", 
                        size=3)
         
+        })
+        
+        
+        # Site Hospitalized Census by Infection Status 
+        
+        output$site_plot2 <- renderPlot({
+          
+          site_pts_data <- Site_Data()
+          
+          
+          covid_pts_census_site <- site_pts_data  %>% filter(CensusDate < Sys.Date() )%>%
+            select(CensusDate, Site, `COVID19`, SUSC, PUI, PUM, `Unit Type High`) %>% mutate(total = COVID19 + SUSC + PUI + PUM) %>%
+            group_by(CensusDate, Site, `Unit Type High`) %>% summarise(total = sum(total))
+          covid_pts_census_site <- covid_pts_census_site %>% mutate(`Unit Type High`=ifelse(is.na(`Unit Type High`), "Other", `Unit Type High`))
+          
+          covid_pts_census_site$CensusDate <- as.Date(covid_pts_census_site$CensusDate, format="%Y-%m-%d")
+          covid_census_max_site <- covid_pts_census_site%>%  group_by(CensusDate, Site) %>% summarise(sum = sum(total))
+          
+          ggplot(covid_pts_census_site, aes(x=CensusDate, y=total, fill=`Unit Type High`))+
+            geom_bar(position="stack",stat="identity", width=0.7)+
+            scale_fill_manual(values=c("#d80b8c",	"#00aeef","#212070","#7f7f7f"))+
+            ggtitle(label=paste0("\n","Hospitalized COVID-19 Patients Census by ED vs. IP"))+
+            labs(x=NULL, y="Beds Occupied")+
+            guides(fill=guide_legend(title="Unit Type"))+
+            theme_bw()+
+            theme(plot.title = element_text(size = 16, vjust = 2), 
+                  legend.position='top', 
+                  legend.justification='left',
+                  legend.direction='horizontal',
+                  legend.title = element_text(size = 10), legend.text = element_text(size = 10), 
+                  axis.text.x = element_text(size = 10, angle = 45, hjust = 1),
+                  axis.text.y = element_text(size = 10),
+                  panel.grid.major = element_line(color = "lightgrey"),
+                  panel.grid.minor = element_line(color = "lightgrey"))+
+            scale_y_continuous(limits = c(0, max(covid_census_max_site$sum)*1.2))+
+            scale_x_date(breaks = "day", date_labels = "%m-%d", date_breaks = "2 days", date_minor_breaks = "1 day", expand = c(0, 0.6))+
+            geom_text(aes(label=total), color="white", 
+                      size=2, position = position_stack(vjust = 0.5))+
+            stat_summary(fun = sum, vjust = -1, aes(label=ifelse(..y.. == 0,"",..y..), group = CensusDate), 
+                         geom="text", color="black", 
+                         size=3)
+          
+        }) 
+        
+        
+        #Hospitalized covid19 patients census trend by unit type
+        updatePickerInput(session = session, inputId = "site_UnitTypeHigh", choices = c("ED", "IP"), selected = "IP")
+        
+        output$site_plot3 <- renderPlot({
+          
+          site_pts_trend_data <- Site_Data()
+          
+          covid_pts_census <- site_pts_trend_data %>% filter(CensusDate < Sys.Date(), `Unit Type High` %in% input$site_UnitTypeHigh )%>%
+                   select(CensusDate, Site, `COVID19`, SUSC, PUI, PUM, `Unit Type High`) %>% mutate(total = COVID19 + SUSC + PUI + PUM) %>%
+            group_by(CensusDate, Site, `Unit Type High`) %>% summarise(total = sum(total))
+          covid_pts_census <- covid_pts_census %>% mutate(`Unit Type High`=ifelse(is.na(`Unit Type High`), "Other", `Unit Type High`))
+          
+          covid_pts_census$CensusDate <- as.Date(covid_pts_census$CensusDate, format="%Y-%m-%d")
+          
+        
+          
+        ggplot(data = covid_pts_census) +
+          geom_point(aes(x = CensusDate, y = total, shape = `Unit Type High`, color = `Unit Type High`)) +
+          geom_line(aes(x = CensusDate, y = total, color = `Unit Type High`)) +
+          scale_shape_manual(values = 1:4)+
+          scale_colour_manual(values=c("#d80b8c",	"#00aeef","#212070","#7f7f7f"))+
+          labs(title = paste0("\n Hospitalized COVID-19 Patients Census Trend"), 
+               x = NULL, y = "Census", shape = "Unit Type", color = "Unit Type") +
+          scale_x_date(breaks = "day", date_labels = "%m-%d", date_breaks = "2 days", date_minor_breaks = "1 day", expand = c(0, 0.6))+
+          theme_bw() +
+          theme(plot.title = element_text(size = 16, vjust = 2), 
+                legend.position='top', 
+                legend.justification='left',
+                legend.direction='horizontal',
+                legend.title = element_text(size = 10), legend.text = element_text(size = 10),
+                axis.text.x = element_text(size = 10, angle = 45,hjust = 1), 
+                axis.text.y = element_text(size = 10),
+                panel.grid.major = element_line(color = "lightgrey"),
+                panel.grid.minor = element_line(color = "lightgrey"))  
+          
+       
+        })
+        
+        
+        ## Site Adult Med Surg
+        
+        observeEvent(input$selectedSite,{
+        
+        unit_type_choices <-  sort(unique(Adult_med_surge$DEPARTMENT_NAME[Adult_med_surge$Site %in% input$selectedSite ]))
+                                                           
+        updatePickerInput(session, inputId = "site_Unit", choices = unit_type_choices, selected = unit_type_choices)
+                          
+        })
+       
+        output$site_plot4 <- renderPlot({
+          
+          site_ams_data <- Site_Data()
+          
+          covid_pts <- site_ams_data %>% filter(CensusDate < Sys.Date(), `Unit Type` == "Adult Med Surg", VirtualUnit == "FALSE") %>%
+            mutate(total = COVID19 + SUSC + PUI + PUM) %>% filter(total > 0) %>% select(CensusDate, Site, DEPARTMENT_NAME, total) %>%
+                                                          group_by(CensusDate, Site, DEPARTMENT_NAME) %>% summarise(total = sum(total))
+          
+          
+          
+          covid_pts$CensusDate <- as.Date(covid_pts$CensusDate, format="%Y-%m-%d")
+          colnames(covid_pts)[colnames(covid_pts) == "DEPARTMENT_NAME"] <- "Unit"
+          
+          covid_pts <- covid_pts %>% filter(Unit %in% input$site_Unit)
+                                
+        
+          
+          validate(need(nrow(covid_pts)>0, "Please provide a different start date"))
+          
+          ggplot(covid_pts)+
+            geom_point(aes(x=CensusDate, y=total, shape=Unit, color=Unit))+
+            geom_line(aes(x=CensusDate, y=total, color=Unit))+
+            scale_shape_manual(values = 1:length(unique(covid_pts$Unit)),
+                               guide = guide_legend(nrow = ceiling(length(unique(covid_pts$Unit))/6)))+
+            ggtitle(label=paste0("\n","Adult Med Surg: Total COVID-19 Patients Census"))+
+            labs(x=NULL, y="Beds Occupied")+
+            theme_bw()+
+            theme(plot.title = element_text(size = 16, vjust = 2), 
+                  legend.position='top', 
+                  legend.justification='left',
+                  legend.direction='horizontal',
+                  legend.title = element_text(size = 10), legend.text = element_text(size = 10), 
+                  axis.text.x = element_text(size = 10, angle = 45, hjust = 1),
+                  axis.text.y = element_text(size = 10),
+                  panel.grid.major = element_line(color = "lightgrey"),
+                  panel.grid.minor = element_line(color = "lightgrey"))+
+            scale_y_continuous(limits = c(0, max(covid_pts$total)*1.2), breaks= pretty_breaks())+
+            scale_x_date(breaks = "day", date_labels = "%m-%d", date_breaks = "2 days", date_minor_breaks = "1 day", expand = c(0, 0.6))
+          
+        })
+        
+        ## Virtual Unit
+        observeEvent(input$selectedSite,{
+          
+          vunit_type_choices <-  sort(unique(Virtual_Unit$DEPARTMENT_NAME[Virtual_Unit$Site %in% input$selectedSite ]))
+          
+          updatePickerInput(session, inputId = "site_VUnit", choices = vunit_type_choices, selected = vunit_type_choices)
+          
+        })
+        
+        
+        output$site_plot5 <- renderPlot({
+          
+          vu_data <- Site_Data()
+          
+          covid_pts_vu <- vu_data %>% filter(CensusDate < Sys.Date(),  VirtualUnit == "TRUE") %>%
+            mutate(total = COVID19 + SUSC + PUI + PUM) %>% filter(total > 0) %>%
+            select(CensusDate, Site, DEPARTMENT_NAME, total) %>%
+            group_by(CensusDate, Site, DEPARTMENT_NAME) %>% summarise(total = sum(total))
+          
+          covid_pts_vu$CensusDate <- as.Date(covid_pts_vu$CensusDate, format="%Y-%m-%d")
+          colnames(covid_pts_vu) <- c("CensusDate","Site","Unit","total")
+          
+          covid_pts_vu %>% filter( Unit %in% input$site_Unit)
+                    
+          
+          validate(need(nrow(covid_pts_vu)>0, "Please provide a different start date"))
+          
+          graph <- ggplot(covid_pts_vu)+
+            geom_point(aes(x=CensusDate, y=total, shape=Unit, color=Unit))+
+            geom_line(aes(x=CensusDate, y=total, color=Unit))+
+            scale_shape_manual(values = 1:length(unique(covid_pts_vu$Unit)),
+                               guide = guide_legend(nrow = ceiling(length(unique(covid_pts_vu$Unit))/4)))+
+            ggtitle(label=paste0("\n"," Virtual Units: Total COVID-19 Patients Census"))+
+            labs(x=NULL, y="Beds Occupied",
+                 caption = "\n*Epic virtual units with > 0 beds occupied.")+
+            theme_bw()+
+            theme(plot.title = element_text(size = 16, vjust = 2), 
+                  legend.position='top', 
+                  legend.justification='center',
+                  legend.direction='horizontal',
+                  legend.title = element_text(size = 10), legend.text = element_text(size = 10), 
+                  axis.text.x = element_text(size = 10, angle = 45, hjust = 1),
+                  axis.text.y = element_text(size = 10),
+                  panel.grid.major = element_line(color = "lightgrey"),
+                  panel.grid.minor = element_line(color = "lightgrey"))+
+            scale_y_continuous(limits = c(0, max(covid_pts_vu$total)*1.2), breaks= pretty_breaks())+
+            scale_x_date(breaks = "day", date_labels = "%m-%d", date_breaks = "2 days", date_minor_breaks = "1 day", expand = c(0, 0.6))
+          
+          if(nrow(covid_pts_vu)>0){
+            plot(graph)
+          }
+          
+        })
+        
+        
+        #Hospitalized covid19 patients census Year over year by infection status 
+        updateSelectInput(session = session, inputId = "site_PatientType", choices = c("COVID19", "SUSC", "PUI", "PUM" ),selected = "COVID19")
+        
+     
+        
+        output$site_plot6 <- renderPlot({
+          
+          site_data <- Site_Data()
+          
+          covid_pts_trend_site <- site_data  %>% filter(CensusDate < Sys.Date()) %>% select(CensusDate, Site, `COVID19`, SUSC, PUI, PUM)
+          covid_pts_trend_site <- reshape2::melt(covid_pts_trend_site, id.vars = c("CensusDate", "Site"))
+          covid_pts_trend_site$CensusDate <- as.Date(covid_pts_trend_site$CensusDate, format="%Y-%m-%d")
+          covid_pts_trend_site <- aggregate(covid_pts_trend_site$value, 
+                                            by=list(covid_pts_trend_site$CensusDate,covid_pts_trend_site$variable , covid_pts_trend_site$Site), FUN=sum)
+          colnames(covid_pts_trend_site) <- c("Date","Patient Type", "Site", "value")
+          
+          covid_trend_site_avg <- covid_pts_trend_site %>% mutate(year= substr(Date, 1, 4),  month = substr(Date, 6,7 ))
+          covid_trend_site_avg <- covid_trend_site_avg %>% filter(`Patient Type` %in% input$site_PatientType) %>%
+                                          group_by(year, month, Site ) %>% summarise(Average= ceiling(mean(value)))
+          covid_trend_site_avg <- covid_trend_site_avg %>% mutate(month= month.abb[as.numeric(month)])
+          covid_pts_trend_max_site <- covid_trend_site_avg %>% group_by(year, month, Site) %>% summarise(sum = sum(Average))
+          
+          ggplot(covid_trend_site_avg) +
+            geom_line(aes(x =month, y = Average, color = year, group = year)) +
+            geom_point(aes(x = month, y = Average,  color = year)) +
+            geom_text(aes(x =month, y = Average, label=ceiling( Average)), color="#212070", 
+                      size=4, hjust=0.2, vjust= -1)+
+            ggtitle(label=paste0("\n","Monthly Average COVID-19 Patients Census Over Year"))+
+            scale_shape_manual(values = 1:4)+
+            scale_color_manual(values=c("#d80b8c",	"#00aeef", "#863198"))+
+            scale_x_discrete(limits = month.abb)+
+            labs(x = NULL, y = "Monthly Average Beds Occupied", color =" year") +
+            theme_bw() +
+            theme(plot.title = element_text(size = 16, vjust = 2), 
+                  legend.position='top', 
+                  legend.justification='left',
+                  legend.direction='horizontal',
+                  axis.text.x = element_text(size = 10, angle = 45,hjust = 1), 
+                  axis.text.y = element_text(size = 10),
+                  panel.grid.major = element_line(color = "lightgrey"),
+                  panel.grid.minor = element_line(color = "lightgrey"))+
+            scale_y_continuous(limits = c(0, max(covid_pts_trend_max_site$sum)*1.2), breaks= pretty_breaks())
+          
+        })
+        
+        
+        #Hospitalized covid19 patients census Year over year by patient setting
+        updatePickerInput(session = session, inputId = "site_UnitTypeHigh1", choices = c("ED", "IP"), selected = "IP")
+        
+        output$site_plot7 <- renderPlot({
+          
+        avg_trend_data <- Site_Data()
+          
+        covid_pts_census <- avg_trend_data %>% filter(CensusDate < Sys.Date(), `Unit Type High` %in% input$site_UnitTypeHigh1 )%>%
+            select(CensusDate, Site, `COVID19`, SUSC, PUI, PUM, `Unit Type High`) %>% mutate(total = COVID19 + SUSC + PUI + PUM) %>%
+            group_by(CensusDate, Site, `Unit Type High`) %>% summarise(total = sum(total))
+        covid_pts_census <- covid_pts_census %>% mutate(`Unit Type High`=ifelse(is.na(`Unit Type High`), "Other", `Unit Type High`))
+          
+        covid_pts_census$CensusDate <- as.Date(covid_pts_census$CensusDate, format="%Y-%m-%d")
+      
+          
+          ## Data for year over year comparison
+          covid_pts_site_avg <- covid_pts_census %>% mutate(year= substr(CensusDate, 1, 4), month = substr(CensusDate, 6,7 ))
+                                                                
+          
+          covid_pts_site_avg <- covid_pts_site_avg %>% group_by(year, month, Site, `Unit Type High`) %>% summarise(Average= ceiling(mean(total)))
+          covid_pts_site_avg <- covid_pts_site_avg %>% mutate(month= month.abb[as.numeric(month)])
+          
+          covid_census_max_site <- covid_pts_site_avg %>%  group_by(month, year, Site) %>% summarise(sum = sum(Average))
+          
+          
+          ggplot(covid_pts_site_avg) +
+            geom_line(aes(x =month, y = Average, color = year, group = year)) +
+            geom_point(aes(x = month, y = Average,  color = year)) +
+            geom_text(aes(x =month, y = Average, label=ceiling( Average)), color="#212070", 
+                      size=4, hjust=0.2, vjust= -1)+
+            ggtitle(label=paste0("\n","Monthly Average COVID-19 Patients Census Over Year"))+
+            scale_shape_manual(values = 1:4)+
+            scale_color_manual(values=c("#d80b8c",	"#00aeef", "#863198"))+
+            scale_x_discrete(limits = month.abb)+
+            labs(x = NULL, y = "Monthly Average Census", color =" year") +
+            theme_bw() +
+            theme(plot.title = element_text(size = 16, vjust = 2),
+                  legend.position='top', 
+                  legend.justification='left',
+                  legend.direction='horizontal',
+                  axis.text.x = element_text(size = 10, angle = 45,hjust = 1), 
+                  axis.text.y = element_text(size = 10),
+                  panel.grid.major = element_line(color = "lightgrey"),
+                  panel.grid.minor = element_line(color = "lightgrey"))+
+          scale_y_continuous(limits = c(0, max(covid_census_max_site$sum)*1.2), breaks= pretty_breaks())
+          
         })
         
         
