@@ -67,13 +67,15 @@ covid_loc <- covid_loc %>%  mutate(`Unit Type High`= ifelse(is.na(`Unit Type Hig
 
 
 ## Adult med surge Unit
-selected_site <- unique(covid_data$Site)
+selected_site <- sort(unique(covid_data$Site))
+#selected_site <- c("MSB",  "MSBI", "MSH",  "MSM",  "MSQ", "MSW" )
 Adult_med_surge <- covid_data %>% filter(CensusDate < Sys.Date(), `Unit Type` == "Adult Med Surg", VirtualUnit == "FALSE")
 Adult_med_choices <- sort(unique(Adult_med_surge$DEPARTMENT_NAME[Adult_med_surge$Site %in% selected_site ]))
 
 
 
 ## Virtual Unit
+#unit_site <- c("MSB", "MSH",  "MSM",  "MSQ", "MSW" )
 Virtual_Unit <- covid_data %>% filter(CensusDate < Sys.Date(),  VirtualUnit == "TRUE") 
 Virtual_unit_choices <- sort(unique(Virtual_Unit$DEPARTMENT_NAME[Virtual_Unit$Site %in% selected_site ]))
 
@@ -128,7 +130,10 @@ ui <- dashboardPage(
       
       # Second tabItem for MSHS
       tabItem(tabName = "mshs",
-              div("MSHS Covid Census Report", style = "color:	#221f72; font-family:Calibri; font-weight:bold; font-size:34px; margin-left: 20px"),
+              div("MSHS Covid Census Report", style = "color:	#221f72; font-family:Calibri; font-weight:bold; font-size:25px; margin-left: 20px"),
+              textOutput("mshsName_DateShow"),
+              tags$head(tags$style("#mshsName_DateShow{color:#7f7f7f; font-family:Calibri; font-style: italic; font-size: 18px; margin-top: -0.2em; margin-bottom: 0.5em; margin-left: 20px}")), hr(),
+              
               fluidRow(
                 column(11, 
                        box(plotOutput("mshs_plot1"),  width= 6, offset= 1,
@@ -143,6 +148,7 @@ ui <- dashboardPage(
                            title = "By Infection Status", status = "primary",
                            solidHeader = TRUE, collapsible = TRUE, closable = TRUE )),
                 
+               
                 column(11,
                        box(plotOutput("mshs_plot4"),  width= 12,
                            title = "By Patient Setting", status = "primary",
@@ -154,7 +160,7 @@ ui <- dashboardPage(
                            solidHeader = TRUE, collapsible = TRUE, closable = TRUE,
                            box(width = 3,
                                pickerInput(inputId = "MSHS_UnitTypeHigh1", label = strong("Select Unit Type"), multiple = T,
-                                           choices = c("ED", "IP"),
+                                           choices = c("ED", "IP"), options = pickerOptions(actionsBox = TRUE),
                                            selected = "IP", width =250)))),
                 column(11,
                        box(plotOutput("mshs_plot6"),  width= 6,
@@ -173,11 +179,9 @@ ui <- dashboardPage(
                 
                 # Filter For MSHS Sites ==================================================================================  
                            
-              
-                tags$head(tags$style(HTML("#FiltersUpdate; {font-size: 18px; position: absolute; left: 35px; top: 53px; height 85%;}"))),
-                tags$head(tags$style(HTML("#dropdownbutton; {position: absolute;left: 25px; top: 53px; }"))),
+                tags$head(tags$style(HTML("#dropdownbutton; {position: absolute;left: 25px; top: 50px; }"))),
                 tags$style(".fa-filter {color:#7f7f7f}"),
-                
+                tags$head(tags$style(HTML("#FiltersUpdate {font-size: 14px; position: absolute; left: 25px; height 85%}"))),
                                                 
                 
                 dropdown(style = "material-circle", size = "lg", right = T, status = "default",
@@ -186,27 +190,34 @@ ui <- dashboardPage(
                          inputId = "dropdownbutton",
                          
                          
-                         br(),
-                         actionButton("FiltersUpdate", "CLICK TO UPDATE", width = "80%", height = "100px"),
-                         br(),
-                         
-                         
                          box(width = 12, height = "100px",
                              title = "Select Date Range:",
                              solidHeader = FALSE, 
                              dateRangeInput("DateRange", label = NULL,
                                             start = start_date, end = Sys.Date()-1,
-                                            min = min(covid_data$CensusDate), max = max(covid_data$CensusDate)))
+                                            min = min(covid_data$CensusDate), max = max(covid_data$CensusDate))),
+                        br(), 
+                        br(), 
+                        br(), 
+                        br(),
+                        br(), 
+                        br(), 
+                        actionButton("FiltersUpdate", "CLICK TO UPDATE", width = "80%", height = "100px"),
+                        br(),
+                        br()
+                         
                 ) # close dropdown
                 
             ) # close fluidrow
                           
       ), # Close MSHS Tabitem
       
-      ### tabItem for Sites  =========================================================================================
-       
       
+      ### tabItem for Sites  =========================================================================================
       tabItem(tabName = "sites",
+              div("Sites Covid Census Report", style = "color:	#221f72; font-family:Calibri; font-weight:bold; font-size:25px; margin-left: 20px"),
+              textOutput("siteName_DateShow"),
+              tags$head(tags$style("#siteName_DateShow{color:#7f7f7f; font-family:Calibri; font-style: italic; font-size: 18px; margin-top: -0.2em; margin-bottom: 0.5em; margin-left: 20px}")), hr(),
               fluidRow(
                 column(11,
                        box(plotOutput("site_plot1"),  width= 12,
@@ -225,28 +236,33 @@ ui <- dashboardPage(
                            title = "Trend By Patient Setting", status = "primary",
                            solidHeader = TRUE, collapsible = TRUE, closable = TRUE,
                            box(width= 3,
-                               pickerInput(inputId = "site_UnitTypeHigh", label = strong("Select Unit Type"), multiple = T, 
+                               pickerInput(inputId = "site_UnitTypeHigh", label = strong("Select Unit Type"), multiple = T,
+                                           options = pickerOptions(actionsBox = TRUE),
                                            choices = c("IP", "ED"), selected = "IP", width =250)))),
-                                           
                 
-               
+                
+                conditionalPanel(condition = "input.selectedSite== 'MSB'|input.selectedSite== 'MSBI'| input.selectedSite== 'MSH'| 
+                                 input.selectedSite== 'MSM'| input.selectedSite== 'MSQ'| input.selectedSite== 'MSW'",
                   column(11,
                          box(plotOutput("site_plot4"),  width= 12,
                              title = "Adult Surg Med: Total COVID-19 Patients Census", status = "primary",
                              solidHeader = TRUE, collapsible = TRUE, closable = TRUE,
                              box(width=3, 
                                  pickerInput(inputId = "site_Unit", label = strong("Select Unit"), 
-                                             choices = Adult_med_choices, selected = Adult_med_choices, width =250, multiple = TRUE)))),
+                                             options = pickerOptions(actionsBox = TRUE),  choices = Adult_med_choices,
+                                             selected = Adult_med_choices, width =250, multiple = TRUE))))),
                 
-                                             
-              
+                
+                conditionalPanel(condition = "input.selectedSite== 'MSB'| input.selectedSite== 'MSH'| 
+                                 input.selectedSite== 'MSM'| input.selectedSite== 'MSQ'| input.selectedSite== 'MSW'",                             
                 column(11,
                        box(plotOutput("site_plot5"),  width= 12,
                            title = "Virtual Units: Total COVID-19 Patients Census", status = "primary",
                            solidHeader = TRUE, collapsible = TRUE, closable = TRUE,
                            box(width=3,
-                               pickerInput(inputId = "site_VUnit", label = strong("Select Unit"), multiple = TRUE,
-                                           choices = Virtual_unit_choices, selected =  Virtual_unit_choices, width =250)) )), 
+                               pickerInput(inputId = "site_VUnit", label = strong("Select Unit"), 
+                                           options = pickerOptions(actionsBox = TRUE), multiple = TRUE, 
+                                           choices = Virtual_unit_choices, selected =  Virtual_unit_choices, width =250)) ))), 
                                            
                            
                 column(11,
@@ -270,6 +286,7 @@ ui <- dashboardPage(
               
               tags$head(tags$style(HTML("#dropdownbuttonSite; {position: absolute;left: 25px;top: 53px; }"))),
               tags$style(".fa-filter {color:#7f7f7f}"),
+              tags$head(tags$style(HTML("#FiltersUpdate1 {font-size: 14px; position: absolute; left: 25px; height 85%}"))),
               
               
               dropdown(style = "material-circle", size = "lg", right = T, status = "default",
@@ -278,9 +295,7 @@ ui <- dashboardPage(
                        inputId = "dropdownbuttonSite",
                        
                        
-                       br(),
-                       actionButton("FiltersUpdate1", "CLICK TO UPDATE", width = "80%", height = "100px"),
-                       br(),
+                       
                        
                        box(width = 12, height = "100px", title = "Select Site:", solidHeader = F,
                            pickerInput("selectedSite",label= NULL, multiple= F,
@@ -290,8 +305,23 @@ ui <- dashboardPage(
                        box(width = 12, height = "100px",
                            title = "Select Date Range:", solidHeader = FALSE, 
                            dateRangeInput("DateRange1", label = NULL, start = start_date, end = Sys.Date()-1,
-                                          min = min(covid_data$CensusDate), max = max(covid_data$CensusDate)))
-                       
+                                          min = min(covid_data$CensusDate), max = max(covid_data$CensusDate))),
+                       br(), 
+                       br(), 
+                       br(), 
+                       br(),
+                       br(), 
+                       br(),
+                       br(),
+                       br(), 
+                       br(),
+                       br(),
+                       br(), 
+                       br(),
+                       actionButton("FiltersUpdate1", "CLICK TO UPDATE", width = "80%", height = "100px"),
+                       br(), 
+                       br()
+  
                        
               ) # close dropdown
            ) # close fluidrow
@@ -306,6 +336,10 @@ ui <- dashboardPage(
       
       
 server <- function(input, output, session) { 
+  
+  output$mshsName_DateShow <- renderText({
+    paste0("Based on data from ", input$DateRange[1]," to ", input$DateRange[2])
+  })
   
           MSHS_Data  <- eventReactive(input$FiltersUpdate, {
           validate( need(input$DateRange[1] < input$DateRange[2], "Error: Start date should be earlier than end date."))
@@ -596,6 +630,12 @@ server <- function(input, output, session) {
         
         #Sites =============================================================================
         
+        output$siteName_DateShow <- renderText({
+          paste0("Based on data from ", input$DateRange1[1]," to ", input$DateRange1[2], 
+                 " for ", paste(sort(input$selectedSite), collapse = ', '))
+        })
+        
+        
         Site_Data  <- eventReactive(input$FiltersUpdate1, {
           validate( need(input$selectedSite != "" , "Please Select a Site"),
                     need(input$DateRange1[1] < input$DateRange1[2], "Error: Start date should be earlier than end date."))
@@ -741,6 +781,7 @@ server <- function(input, output, session) {
        
         output$site_plot4 <- renderPlot({
           
+      
           site_ams_data <- Site_Data()
           
           covid_pts <- site_ams_data %>% filter(CensusDate < Sys.Date(), `Unit Type` == "Adult Med Surg", VirtualUnit == "FALSE") %>%
