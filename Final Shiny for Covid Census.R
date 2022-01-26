@@ -275,7 +275,7 @@ ui <- dashboardPage(
                            
                 column(11,
                        box(width= 6,
-                           title = "Yearly Comparison by Infection Status", status = "primary",
+                           title = "By Infection Status", status = "primary",
                            solidHeader = TRUE, collapsible = TRUE, closable = TRUE,
                            pickerInput(inputId = "site_PatientType", label = strong("Select Patient Type"), multiple = TRUE,
                                        choices = c("COVID19", "SUSC", "PUI"), options = pickerOptions(actionsBox = TRUE),
@@ -285,7 +285,7 @@ ui <- dashboardPage(
                 
                
                        box(  width= 6,
-                           title = "Yearly Comparison by  Patient Setting", status = "primary",
+                           title = "By  Patient Setting", status = "primary",
                            solidHeader = TRUE, collapsible = TRUE, closable = TRUE,
                            pickerInput(inputId = "site_UnitTypeHigh1", label = strong("Select Unit Type"),
                                        choices = c("IP", "ED") , multiple = TRUE, options = pickerOptions(actionsBox = TRUE),
@@ -559,8 +559,8 @@ server <- function(input, output, session) {
                  aes(x=month, y=Average, fill=factor(year,levels=c("2020","2021","2022"))))+
             geom_bar(position=position_dodge(),stat="identity", width=0.7)+
             scale_fill_manual(values=c("#d80b8c",	"#00aeef","#863198","#212070"))+
-            ggtitle(label="\nDaily Average COVID-19 Patient Status by Year")+
-            labs(x=NULL, y="Beds Occupied")+
+            ggtitle(label="\nAverage Daily COVID-19 Patient Census by Year")+
+            labs(x=NULL, y="Beds Occupied", caption = paste0( "\n*The current month includes data till ", Sys.Date()-1))+
             guides(fill=guide_legend(title="Year"))+
             theme_bw()+
             theme(plot.title = element_text(size = 16, hjust = 0.5), 
@@ -616,8 +616,8 @@ server <- function(input, output, session) {
                  aes(x=month, y=Average, fill=factor(year,levels=c("2020","2021","2022"))))+
             geom_bar(position=position_dodge(),stat="identity", width=0.7)+
             scale_fill_manual(values=c("#d80b8c",	"#00aeef","#863198","#212070"))+
-            ggtitle(label="\nDaily Average COVID-19 Patient Status by Year")+
-            labs(x=NULL, y="Census")+
+            ggtitle(label="\nAverage Daily COVID-19 Patient Census by Year")+
+            labs(x=NULL, y="Census", caption = paste0( "\n*The current month includes data till ", Sys.Date()-1))+
             guides(fill=guide_legend(title="Year"))+
             theme_bw()+
             theme(plot.title = element_text(size = 16, hjust = 0.5), 
@@ -913,8 +913,9 @@ server <- function(input, output, session) {
                  aes(x=month, y=Average, fill=factor(year,levels=c("2020","2021","2022"))))+
             geom_bar(position=position_dodge(),stat="identity", width=0.7)+
             scale_fill_manual(values=c("#d80b8c",	"#00aeef","#863198","#212070"))+
-            ggtitle(label="\nDaily Average COVID-19 Patient Status by Year")+
-            labs(x=NULL, y="Beds Occupied")+
+            ggtitle(label="\nAverage Daily COVID-19 Patient Census by Year")+
+            labs(x=NULL, y="Beds Occupied",
+               caption = paste0( "\n*The current month includes data till ", Sys.Date()-1))+
             guides(fill=guide_legend(title="Year"))+
             theme_bw()+
             theme(plot.title = element_text(size = 16, hjust = 0.5), 
@@ -964,8 +965,8 @@ server <- function(input, output, session) {
                  aes(x=month, y=Average, fill=factor(year,levels=c("2020","2021","2022"))))+
             geom_bar(position=position_dodge(),stat="identity", width=0.7)+
             scale_fill_manual(values=c("#d80b8c",	"#00aeef","#863198","#212070"))+
-            ggtitle(label="\nDaily Average COVID-19 Patient Status by Year")+
-            labs(x=NULL, y="Census")+
+            ggtitle(label="\nAverage Daily COVID-19 Patient Census by Year")+
+            labs(x=NULL, y="Census", caption = paste0( "\n*The current month includes data till ", Sys.Date()-1))+
             guides(fill=guide_legend(title="Year"))+
             theme_bw()+
             theme(plot.title = element_text(size = 16, hjust = 0.5), 
